@@ -1,11 +1,31 @@
 import { useMemo, useState } from "react";
 import "./App.css";
 
-type Tab = "home" | "pre" | "apa" | "explain";
+type Tab = "pre" | "apa" | "explain";
 type PreMode = "f" | "sce";
-type ApaMode = "twoGroups" | "continuous" | "multiple" | "factorial";
-type MultipleMode = "mixed" | "twoContinuous";
-type FactorialMode = "mainOnly" | "withInteraction";
+type ApaMode = "twoGroups" | "simpleRegression" | "noInteraction" | "interaction";
+type ModelSubtype = "mixed" | "twoContinuous" | "twoCategorical";
+type PreMethod = "auto" | "manual";
+
+type PreControl = {
+  method: PreMethod;
+  manual: string;
+  f: string;
+  n: string;
+  pa: string;
+  pc: string;
+};
+
+function makePreControl(): PreControl {
+  return {
+    method: "auto",
+    manual: "",
+    f: "",
+    n: "",
+    pa: "",
+    pc: "",
+  };
+}
 
 function parseValue(value: string): number {
   return Number(value.trim().replace(/\s/g, "").replace(/,/g, "."));
@@ -20,12 +40,6 @@ function formatValue(value: number, digits = 2): string {
   const fixed = value.toFixed(digits);
   if (Math.abs(value) < 1) return fixed.replace(/^(-?)0\./, "$1.");
   return fixed;
-}
-
-function formatP(p: number): string {
-  if (!Number.isFinite(p)) return "";
-  if (p < 0.001) return "p < .001";
-  return `p = ${formatValue(p, 3)}`;
 }
 
 function formatPre(pre: number): string {
@@ -79,6 +93,34 @@ function isSignificantP(value: string): boolean | null {
   return Number.isFinite(n) ? n < 0.05 : null;
 }
 
+function computePreFromFValues(f: string, n: string, pa: string, pc: string): number | null {
+  if (![f, n, pa, pc].every(hasNumber)) return null;
+
+  const F = parseValue(f);
+  const N = parseValue(n);
+  const PA = parseValue(pa);
+  const PC = parseValue(pc);
+
+  const dfEffect = PA - PC;
+  const dfError = N - PA;
+
+  if (dfEffect <= 0 || dfError <= 0) return null;
+
+  return (dfEffect * F) / (dfEffect * F + dfError);
+}
+
+function resolvePre(pre: PreControl): number | null {
+  if (pre.method === "manual") {
+    return hasNumber(pre.manual) ? parseValue(pre.manual) : null;
+  }
+  return computePreFromFValues(pre.f, pre.n, pre.pa, pre.pc);
+}
+
+function preSuffix(pre: PreControl): string {
+  const value = resolvePre(pre);
+  return value === null ? "" : `, PRE = ${formatPre(value)}`;
+}
+
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -126,102 +168,110 @@ function ResultCard({
   return (
     <div className="result-card">
       <p className="result-eyebrow">{title}</p>
-      <p className="result-text">
-        {text || "Remplis les champs pour voir le résultat."}
-      </p>
+      <p className="result-text">{text || "Remplis les champs pour voir le résultat."}</p>
       {secondary ? <p className="result-secondary">{secondary}</p> : null}
     </div>
   );
 }
 
+function PreInput({
+  title,
+  value,
+  onChange,
+}: {
+  title: string;
+  value: PreControl;
+  onChange: (next: PreControl) => void;
+}) {
+  const autoPreview = computePreFromFValues(value.f, value.n, value.pa, value.pc);
+  const currentPreview = resolvePre(value);
+
+  return (
+    <div className="note-box">
+      <strong>{title}</strong>
+
+      <div className="mode-switch left" style={{ marginTop: 12 }}>
+        <button
+          className={value.method === "auto" ? "mode-button active" : "mode-button"}
+          onClick={() => onChange({ ...value, method: "auto" })}
+          type="button"
+        >
+          Auto via F, N, PA, PC
+        </button>
+        <button
+          className={value.method === "manual" ? "mode-button active" : "mode-button"}
+          onClick={() => onChange({ ...value, method: "manual" })}
+          type="button"
+        >
+          PRE manuel
+        </button>
+      </div>
+
+      {value.method === "auto" ? (
+        <>
+          <div className="form-grid" style={{ marginTop: 14 }}>
+            <TextField
+              label="F"
+              value={value.f}
+              onChange={(next) => onChange({ ...value, f: next })}
+              placeholder="ex. 19.493"
+            />
+            <TextField
+              label="N"
+              value={value.n}
+              onChange={(next) => onChange({ ...value, n: next })}
+              placeholder="ex. 30"
+            />
+            <TextField
+              label="PA"
+              value={value.pa}
+              onChange={(next) => onChange({ ...value, pa: next })}
+              placeholder="ex. 3"
+              helper="modèle augmenté"
+            />
+            <TextField
+              label="PC"
+              value={value.pc}
+              onChange={(next) => onChange({ ...value, pc: next })}
+              placeholder="ex. 2"
+              helper="modèle contraint"
+            />
+          </div>
+          <p className="field-helper" style={{ marginTop: 10 }}>
+            Formule : PRE = ((PA − PC) × F) / [((PA − PC) × F) + (N − PA)]
+          </p>
+          {autoPreview !== null ? (
+            <div className="mini-note" style={{ marginTop: 10 }}>
+              <strong>PRE calculé :</strong> {formatPre(autoPreview)}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div style={{ marginTop: 14 }}>
+          <TextField
+            label="PRE"
+            value={value.manual}
+            onChange={(next) => onChange({ ...value, manual: next })}
+            placeholder="ex. .411"
+          />
+          {currentPreview !== null ? (
+            <div className="mini-note" style={{ marginTop: 10 }}>
+              <strong>PRE utilisé :</strong> {formatPre(currentPreview)}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
-  const [tab, setTab] = useState<Tab>("home");
+  const [tab, setTab] = useState<Tab>("pre");
   const [preMode, setPreMode] = useState<PreMode>("f");
   const [apaMode, setApaMode] = useState<ApaMode>("twoGroups");
-  const [multipleMode, setMultipleMode] = useState<MultipleMode>("mixed");
-const [factorialMode, setFactorialMode] = useState<FactorialMode>("mainOnly");
+  const [noInteractionSubtype, setNoInteractionSubtype] = useState<ModelSubtype>("mixed");
+  const [interactionSubtype, setInteractionSubtype] = useState<ModelSubtype>("mixed");
   const [openExplain, setOpenExplain] = useState<string>("b");
-
-  const [continuous, setContinuous] = useState({
-  predictor: "X",
-  outcome: "Y",
-  b: "",
-  t: "",
-  df: "",
-  p: "",
-  pre: "",
-  intercept: "",
-});
-
-const [multiple, setMultiple] = useState({
-  outcome: "la performance",
-  categoricalPredictor: "le sexe",
-  continuousPredictor: "la taille",
-  group1: "Femmes",
-  m1: "",
-  sd1: "",
-  group2: "Hommes",
-  m2: "",
-  sd2: "",
-  catT: "",
-  catDf: "",
-  catP: "",
-  catPre: "",
-  b: "",
-  contT: "",
-  contDf: "",
-  contP: "",
-  contPre: "",
-});
-
-const [twoContinuousMultiple, setTwoContinuousMultiple] = useState({
-  outcome: "la performance",
-  predictor1: "X1",
-  predictor2: "X2",
-  b1: "",
-  t1: "",
-  df1: "",
-  p1: "",
-  pre1: "",
-  b2: "",
-  t2: "",
-  df2: "",
-  p2: "",
-  pre2: "",
-});
-
-const [factorial, setFactorial] = useState({
-  outcome: "la variable dépendante",
-  factorA: "Facteur A",
-  levelA1: "A1",
-  meanA1: "",
-  sdA1: "",
-  levelA2: "A2",
-  meanA2: "",
-  sdA2: "",
-  fA: "",
-  df1A: "",
-  df2A: "",
-  pA: "",
-  preA: "",
-  factorB: "Facteur B",
-  levelB1: "B1",
-  meanB1: "",
-  sdB1: "",
-  levelB2: "B2",
-  meanB2: "",
-  sdB2: "",
-  fB: "",
-  df1B: "",
-  df2B: "",
-  pB: "",
-  preB: "",
-  fInt: "",
-  df1Int: "",
-  df2Int: "",
-  pInt: "",
-  preInt: "",
-});
 
   const [preFromF, setPreFromF] = useState({
     f: "",
@@ -247,58 +297,160 @@ const [factorial, setFactorial] = useState({
     t: "",
     df: "",
     p: "",
-    pre: "",
+    pre: makePreControl(),
   });
 
-  // const [interaction, setInteraction] = useState({
-  //   predictor1: "X",
-  //   predictor2: "Z",
-  //   outcome: "Y",
-  //   statType: "F" as InteractionStat,
-  //   stat: "",
-  //   df1: "",
-  //   df2: "",
-  //   df: "",
-  //   p: "",
-  //   pre: "",
-  // });
+  const [simpleRegression, setSimpleRegression] = useState({
+    predictor: "X",
+    outcome: "Y",
+    b: "",
+    t: "",
+    df: "",
+    p: "",
+    intercept: "",
+    pre: makePreControl(),
+  });
+
+  const [mainMixed, setMainMixed] = useState({
+    outcome: "la performance",
+    categoricalPredictor: "le sexe",
+    continuousPredictor: "la taille",
+    group1: "Femmes",
+    m1: "",
+    sd1: "",
+    group2: "Hommes",
+    m2: "",
+    sd2: "",
+    catT: "",
+    catDf: "",
+    catP: "",
+    catPre: makePreControl(),
+    b: "",
+    contT: "",
+    contDf: "",
+    contP: "",
+    contPre: makePreControl(),
+  });
+
+  const [mainTwoContinuous, setMainTwoContinuous] = useState({
+    outcome: "la performance",
+    predictor1: "X1",
+    predictor2: "X2",
+    b1: "",
+    t1: "",
+    df1: "",
+    p1: "",
+    pre1: makePreControl(),
+    b2: "",
+    t2: "",
+    df2: "",
+    p2: "",
+    pre2: makePreControl(),
+  });
+
+  const [twoCategorical, setTwoCategorical] = useState({
+    outcome: "la variable dépendante",
+    factorA: "Facteur A",
+    levelA1: "A1",
+    meanA1: "",
+    sdA1: "",
+    levelA2: "A2",
+    meanA2: "",
+    sdA2: "",
+    fA: "",
+    df1A: "",
+    df2A: "",
+    pA: "",
+    preA: makePreControl(),
+    factorB: "Facteur B",
+    levelB1: "B1",
+    meanB1: "",
+    sdB1: "",
+    levelB2: "B2",
+    meanB2: "",
+    sdB2: "",
+    fB: "",
+    df1B: "",
+    df2B: "",
+    pB: "",
+    preB: makePreControl(),
+    fInt: "",
+    df1Int: "",
+    df2Int: "",
+    pInt: "",
+    preInt: makePreControl(),
+  });
+
+  const [interactionMixed, setInteractionMixed] = useState({
+    outcome: "la variable dépendante",
+    categoricalPredictor: "le contexte",
+    continuousPredictor: "X",
+    group1: "Modalité 1",
+    m1: "",
+    sd1: "",
+    group2: "Modalité 2",
+    m2: "",
+    sd2: "",
+    catF: "",
+    catDf1: "",
+    catDf2: "",
+    catP: "",
+    catPre: makePreControl(),
+    b: "",
+    contT: "",
+    contDf: "",
+    contP: "",
+    contPre: makePreControl(),
+    intF: "",
+    intDf1: "",
+    intDf2: "",
+    intP: "",
+    intPre: makePreControl(),
+  });
+
+  const [interactionTwoContinuous, setInteractionTwoContinuous] = useState({
+    outcome: "la variable dépendante",
+    predictor1: "X",
+    predictor2: "Z",
+    b1: "",
+    t1: "",
+    df1: "",
+    p1: "",
+    pre1: makePreControl(),
+    b2: "",
+    t2: "",
+    df2: "",
+    p2: "",
+    pre2: makePreControl(),
+    bInt: "",
+    tInt: "",
+    dfInt: "",
+    pInt: "",
+    preInt: makePreControl(),
+  });
 
   const preOutput = useMemo(() => {
     if (preMode === "f") {
-      if (
-        !hasNumber(preFromF.f) ||
-        !hasNumber(preFromF.n) ||
-        !hasNumber(preFromF.pa) ||
-        !hasNumber(preFromF.pc)
-      ) {
+      const value = computePreFromFValues(preFromF.f, preFromF.n, preFromF.pa, preFromF.pc);
+
+      if (value === null) {
         return {
           value: "",
           explanation: "",
         };
       }
 
-      const F = parseValue(preFromF.f);
       const N = parseValue(preFromF.n);
       const PA = parseValue(preFromF.pa);
       const PC = parseValue(preFromF.pc);
-
       const dfEffect = PA - PC;
       const dfError = N - PA;
 
-      if (dfEffect <= 0 || dfError <= 0) {
-        return {
-          value: "Vérifie PA, PC et N.",
-          explanation: "Il faut PA > PC et N > PA.",
-        };
-      }
-
-      const pre = (dfEffect * F) / (dfEffect * F + dfError);
-
       return {
-        value: `PRE = ${formatPre(pre)}`,
+        value: `PRE = ${formatPre(value)}`,
         explanation: `Formule utilisée : PRE = ((PA - PC) × F) / [((PA - PC) × F) + (N - PA)] ; ddl effet = ${formatValue(
           dfEffect,
-          0,
+          0
         )}, ddl erreur = ${formatValue(dfError, 0)}.`,
       };
     }
@@ -328,430 +480,689 @@ const [factorial, setFactorial] = useState({
     };
   }, [preFromF, preFromSce, preMode]);
 
-  // const explainItems = [
- const twoGroupsApa = useMemo(() => {
-  const numericReady = [twoGroups.m1, twoGroups.sd1, twoGroups.m2, twoGroups.sd2, twoGroups.t, twoGroups.df, twoGroups.pre].every(hasNumber);
-  if (!numericReady || !twoGroups.p.trim()) return "";
+  const twoGroupsApa = useMemo(() => {
+    const numericReady = [twoGroups.m1, twoGroups.sd1, twoGroups.m2, twoGroups.sd2, twoGroups.t, twoGroups.df].every(hasNumber);
+    if (!numericReady || !twoGroups.p.trim()) return "";
 
-  const m1 = parseValue(twoGroups.m1);
-  const sd1 = parseValue(twoGroups.sd1);
-  const m2 = parseValue(twoGroups.m2);
-  const sd2 = parseValue(twoGroups.sd2);
-  const t = parseValue(twoGroups.t);
-  const df = parseValue(twoGroups.df);
-  const pre = parseValue(twoGroups.pre);
-  const sig = isSignificantP(twoGroups.p);
-  const pText = normalizePText(twoGroups.p);
+    const m1 = parseValue(twoGroups.m1);
+    const sd1 = parseValue(twoGroups.sd1);
+    const m2 = parseValue(twoGroups.m2);
+    const sd2 = parseValue(twoGroups.sd2);
+    const t = parseValue(twoGroups.t);
+    const df = parseValue(twoGroups.df);
+    const sig = isSignificantP(twoGroups.p);
+    const pText = normalizePText(twoGroups.p);
+    const preText = preSuffix(twoGroups.pre);
 
-  if (sig === null) return "";
+    if (sig === null) return "";
 
-  const descriptive =
-    m1 > m2
-      ? `${twoGroups.group1} (M = ${formatValue(m1, 2)}, ET = ${formatValue(sd1, 2)}) présente un score plus élevé que ${twoGroups.group2} (M = ${formatValue(m2, 2)}, ET = ${formatValue(sd2, 2)}).`
-      : `${twoGroups.group2} (M = ${formatValue(m2, 2)}, ET = ${formatValue(sd2, 2)}) présente un score plus élevé que ${twoGroups.group1} (M = ${formatValue(m1, 2)}, ET = ${formatValue(sd1, 2)}).`;
+    const descriptive =
+      m1 > m2
+        ? `${twoGroups.group1} (M = ${formatValue(m1, 2)}, ET = ${formatValue(sd1, 2)}) présente un score plus élevé que ${twoGroups.group2} (M = ${formatValue(m2, 2)}, ET = ${formatValue(sd2, 2)}).`
+        : `${twoGroups.group2} (M = ${formatValue(m2, 2)}, ET = ${formatValue(sd2, 2)}) présente un score plus élevé que ${twoGroups.group1} (M = ${formatValue(m1, 2)}, ET = ${formatValue(sd1, 2)}).`;
 
-  if (sig) {
-    return `On observe un effet significatif de ${twoGroups.iv} sur ${twoGroups.dv}, t(${formatValue(df, 0)}) = ${formatValue(
-      t,
-      2
-    )}, ${pText}, PRE = ${formatPre(pre)}. ${descriptive}`;
-  }
+    if (sig) {
+      return `On observe un effet significatif de ${twoGroups.iv} sur ${twoGroups.dv}, t(${formatValue(df, 0)}) = ${formatValue(
+        t,
+        2
+      )}, ${pText}${preText}. ${descriptive}`;
+    }
 
-  return `L’effet de ${twoGroups.iv} sur ${twoGroups.dv} n’est pas significatif, t(${formatValue(
-    df,
-    0
-  )}) = ${formatValue(t, 2)}, ${pText}, PRE = ${formatPre(pre)}. Au niveau descriptif, ${descriptive.toLowerCase()}`;
-}, [twoGroups]);
+    return `L’effet de ${twoGroups.iv} sur ${twoGroups.dv} n’est pas significatif, t(${formatValue(
+      df,
+      0
+    )}) = ${formatValue(t, 2)}, ${pText}${preText}. Au niveau descriptif, ${descriptive.toLowerCase()}`;
+  }, [twoGroups]);
 
-const continuousApa = useMemo(() => {
-  const numericReady = [continuous.b, continuous.t, continuous.df, continuous.pre].every(hasNumber);
-  if (!numericReady || !continuous.p.trim()) return "";
+  const simpleRegressionApa = useMemo(() => {
+    const numericReady = [simpleRegression.b, simpleRegression.t, simpleRegression.df].every(hasNumber);
+    if (!numericReady || !simpleRegression.p.trim()) return "";
 
-  const b = parseValue(continuous.b);
-  const t = parseValue(continuous.t);
-  const df = parseValue(continuous.df);
-  const pre = parseValue(continuous.pre);
-  const sig = isSignificantP(continuous.p);
-  const pText = normalizePText(continuous.p);
+    const b = parseValue(simpleRegression.b);
+    const t = parseValue(simpleRegression.t);
+    const df = parseValue(simpleRegression.df);
+    const sig = isSignificantP(simpleRegression.p);
+    const pText = normalizePText(simpleRegression.p);
+    const preText = preSuffix(simpleRegression.pre);
 
-  if (sig === null) return "";
+    if (sig === null) return "";
 
-  const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
+    const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
 
-  if (sig) {
-    return `${continuous.predictor} prédit ${direction} ${continuous.outcome}, et cette relation est significative, b = ${formatValue(
+    if (sig) {
+      return `${simpleRegression.predictor} prédit ${direction} ${simpleRegression.outcome}, et cette relation est significative, b = ${formatValue(
+        b,
+        3
+      )}, t(${formatValue(df, 0)}) = ${formatValue(t, 3)}, ${pText}${preText}.`;
+    }
+
+    return `${simpleRegression.predictor} prédit ${direction} ${simpleRegression.outcome}, mais cette relation est non-significative, b = ${formatValue(
       b,
       3
-    )}, t(${formatValue(df, 0)}) = ${formatValue(t, 2)}, ${pText}, PRE = ${formatPre(pre)}.`;
-  }
+    )}, t(${formatValue(df, 0)}) = ${formatValue(t, 3)}, ${pText}${preText}.`;
+  }, [simpleRegression]);
 
-  return `${continuous.predictor} prédit ${direction} ${continuous.outcome}, mais cette relation est non-significative, b = ${formatValue(
-    b,
-    3
-  )}, t(${formatValue(df, 0)}) = ${formatValue(t, 2)}, ${pText}, PRE = ${formatPre(pre)}.`;
-}, [continuous]);
+  const simpleRegressionExplain = useMemo(() => {
+    if (!hasNumber(simpleRegression.b)) return "";
 
-const continuousExplain = useMemo(() => {
-  if (!hasNumber(continuous.b)) return "";
+    const b = parseValue(simpleRegression.b);
+    const direction =
+      b > 0
+        ? `Quand ${simpleRegression.predictor} augmente d’une unité, la valeur prédite de ${simpleRegression.outcome} augmente de ${formatValue(
+            b,
+            3
+          )} unité(s).`
+        : `Quand ${simpleRegression.predictor} augmente d’une unité, la valeur prédite de ${simpleRegression.outcome} diminue de ${formatValue(
+            Math.abs(b),
+            3
+          )} unité(s).`;
 
-  const b = parseValue(continuous.b);
-  const direction =
-    b > 0
-      ? `Quand ${continuous.predictor} augmente d’une unité, la valeur prédite de ${continuous.outcome} augmente de ${formatValue(
+    if (hasNumber(simpleRegression.intercept)) {
+      const intercept = parseValue(simpleRegression.intercept);
+      return `${direction} L’ordonnée à l’origine estimée est ${formatValue(intercept, 3)}.`;
+    }
+
+    return direction;
+  }, [simpleRegression]);
+
+  const mainMixedApa = useMemo(() => {
+    const numericReady = [
+      mainMixed.m1,
+      mainMixed.sd1,
+      mainMixed.m2,
+      mainMixed.sd2,
+      mainMixed.catT,
+      mainMixed.catDf,
+      mainMixed.b,
+      mainMixed.contT,
+      mainMixed.contDf,
+    ].every(hasNumber);
+
+    if (!numericReady || !mainMixed.catP.trim() || !mainMixed.contP.trim()) return "";
+
+    const m1 = parseValue(mainMixed.m1);
+    const sd1 = parseValue(mainMixed.sd1);
+    const m2 = parseValue(mainMixed.m2);
+    const sd2 = parseValue(mainMixed.sd2);
+
+    const catT = parseValue(mainMixed.catT);
+    const catDf = parseValue(mainMixed.catDf);
+    const b = parseValue(mainMixed.b);
+    const contT = parseValue(mainMixed.contT);
+    const contDf = parseValue(mainMixed.contDf);
+
+    const catSig = isSignificantP(mainMixed.catP);
+    const contSig = isSignificantP(mainMixed.contP);
+    if (catSig === null || contSig === null) return "";
+
+    const catPText = normalizePText(mainMixed.catP);
+    const contPText = normalizePText(mainMixed.contP);
+    const catPreText = preSuffix(mainMixed.catPre);
+    const contPreText = preSuffix(mainMixed.contPre);
+
+    const group1Higher = m1 > m2;
+    const higherGroup = group1Higher ? mainMixed.group1 : mainMixed.group2;
+    const lowerGroup = group1Higher ? mainMixed.group2 : mainMixed.group1;
+    const higherMean = group1Higher ? m1 : m2;
+    const lowerMean = group1Higher ? m2 : m1;
+    const higherSd = group1Higher ? sd1 : sd2;
+    const lowerSd = group1Higher ? sd2 : sd1;
+
+    const catSentence = catSig
+      ? `Indépendamment de ${mainMixed.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
+          higherMean,
+          3
+        )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${mainMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
+          lowerMean,
+          3
+        )}, ET = ${formatValue(lowerSd, 3)}). Cette différence est significative, t(${formatValue(
+          catDf,
+          0
+        )}) = ${formatValue(catT, 3)}, ${catPText}${catPreText}.`
+      : `Indépendamment de ${mainMixed.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
+          higherMean,
+          3
+        )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${mainMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
+          lowerMean,
+          3
+        )}, ET = ${formatValue(lowerSd, 3)}), mais cette différence est non-significative, t(${formatValue(
+          catDf,
+          0
+        )}) = ${formatValue(catT, 3)}, ${catPText}${catPreText}.`;
+
+    const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
+    const contSentence = contSig
+      ? `Indépendamment de ${mainMixed.categoricalPredictor}, ${mainMixed.continuousPredictor} prédit ${direction} ${mainMixed.outcome}, et cette relation est significative, b = ${formatValue(
           b,
           3
-        )} unité(s).`
-      : `Quand ${continuous.predictor} augmente d’une unité, la valeur prédite de ${continuous.outcome} diminue de ${formatValue(
-          Math.abs(b),
+        )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}${contPreText}.`
+      : `Indépendamment de ${mainMixed.categoricalPredictor}, ${mainMixed.continuousPredictor} prédit ${direction} ${mainMixed.outcome}, mais cette relation est non-significative, b = ${formatValue(
+          b,
           3
-        )} unité(s).`;
+        )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}${contPreText}.`;
 
-  if (hasNumber(continuous.intercept)) {
-    const intercept = parseValue(continuous.intercept);
-    return `${direction} L’ordonnée à l’origine estimée est ${formatValue(intercept, 3)}.`;
-  }
+    return `${catSentence} ${contSentence}`;
+  }, [mainMixed]);
 
-  return direction;
-}, [continuous]);
+  const mainMixedExplain = useMemo(() => {
+    const numericReady = [mainMixed.m1, mainMixed.m2, mainMixed.b].every(hasNumber);
+    if (!numericReady || !mainMixed.catP.trim() || !mainMixed.contP.trim()) return "";
 
-const multipleMixedApa = useMemo(() => {
-  const numericReady = [
-    multiple.m1,
-    multiple.sd1,
-    multiple.m2,
-    multiple.sd2,
-    multiple.catT,
-    multiple.catDf,
-    multiple.catPre,
-    multiple.b,
-    multiple.contT,
-    multiple.contDf,
-    multiple.contPre,
-  ].every(hasNumber);
+    const m1 = parseValue(mainMixed.m1);
+    const m2 = parseValue(mainMixed.m2);
+    const b = parseValue(mainMixed.b);
+    const catSig = isSignificantP(mainMixed.catP);
+    const contSig = isSignificantP(mainMixed.contP);
 
-  if (!numericReady || !multiple.catP.trim() || !multiple.contP.trim()) return "";
+    if (catSig === null || contSig === null) return "";
 
-  const m1 = parseValue(multiple.m1);
-  const sd1 = parseValue(multiple.sd1);
-  const m2 = parseValue(multiple.m2);
-  const sd2 = parseValue(multiple.sd2);
+    const higherGroup = m1 > m2 ? mainMixed.group1 : mainMixed.group2;
 
-  const catT = parseValue(multiple.catT);
-  const catDf = parseValue(multiple.catDf);
-  const catPre = parseValue(multiple.catPre);
+    const simpleCat = catSig
+      ? `À ${mainMixed.continuousPredictor} égal, les ${higherGroup} ont le score le plus élevé sur ${mainMixed.outcome}.`
+      : `À ${mainMixed.continuousPredictor} égal, la différence liée à ${mainMixed.categoricalPredictor} n’est pas significative.`;
 
-  const b = parseValue(multiple.b);
-  const contT = parseValue(multiple.contT);
-  const contDf = parseValue(multiple.contDf);
-  const contPre = parseValue(multiple.contPre);
+    const simpleCont = contSig
+      ? b >= 0
+        ? `À ${mainMixed.categoricalPredictor} égal, plus ${mainMixed.continuousPredictor} augmente, plus ${mainMixed.outcome} augmente.`
+        : `À ${mainMixed.categoricalPredictor} égal, plus ${mainMixed.continuousPredictor} augmente, plus ${mainMixed.outcome} diminue.`
+      : b >= 0
+      ? `À ${mainMixed.categoricalPredictor} égal, ${mainMixed.continuousPredictor} est positivement associé à ${mainMixed.outcome}, mais pas de manière significative.`
+      : `À ${mainMixed.categoricalPredictor} égal, ${mainMixed.continuousPredictor} est négativement associé à ${mainMixed.outcome}, mais pas de manière significative.`;
 
-  const catSig = isSignificantP(multiple.catP);
-  const contSig = isSignificantP(multiple.contP);
-  if (catSig === null || contSig === null) return "";
+    return `${simpleCat} ${simpleCont}`;
+  }, [mainMixed]);
 
-  const catPText = normalizePText(multiple.catP);
-  const contPText = normalizePText(multiple.contP);
+  const mainTwoContinuousApa = useMemo(() => {
+    const numericReady = [
+      mainTwoContinuous.b1,
+      mainTwoContinuous.t1,
+      mainTwoContinuous.df1,
+      mainTwoContinuous.b2,
+      mainTwoContinuous.t2,
+      mainTwoContinuous.df2,
+    ].every(hasNumber);
 
-  const group1Higher = m1 > m2;
-  const higherGroup = group1Higher ? multiple.group1 : multiple.group2;
-  const lowerGroup = group1Higher ? multiple.group2 : multiple.group1;
-  const higherMean = group1Higher ? m1 : m2;
-  const lowerMean = group1Higher ? m2 : m1;
-  const higherSd = group1Higher ? sd1 : sd2;
-  const lowerSd = group1Higher ? sd2 : sd1;
+    if (!numericReady || !mainTwoContinuous.p1.trim() || !mainTwoContinuous.p2.trim()) return "";
 
-  const categoricalSentence = catSig
-    ? `Indépendamment de ${multiple.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
-        higherMean,
-        3
-      )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${multiple.outcome} que les ${lowerGroup} (M = ${formatValue(
-        lowerMean,
-        3
-      )}, ET = ${formatValue(lowerSd, 3)}). Cette différence est significative, t(${formatValue(
-        catDf,
-        0
-      )}) = ${formatValue(catT, 3)}, ${catPText}, PRE = ${formatPre(catPre)}.`
-    : `Indépendamment de ${multiple.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
-        higherMean,
-        3
-      )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${multiple.outcome} que les ${lowerGroup} (M = ${formatValue(
-        lowerMean,
-        3
-      )}, ET = ${formatValue(lowerSd, 3)}), mais cette différence est non-significative, t(${formatValue(
-        catDf,
-        0
-      )}) = ${formatValue(catT, 3)}, ${catPText}, PRE = ${formatPre(catPre)}.`;
+    const b1 = parseValue(mainTwoContinuous.b1);
+    const t1 = parseValue(mainTwoContinuous.t1);
+    const df1 = parseValue(mainTwoContinuous.df1);
+    const b2 = parseValue(mainTwoContinuous.b2);
+    const t2 = parseValue(mainTwoContinuous.t2);
+    const df2 = parseValue(mainTwoContinuous.df2);
 
-  const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
-  const continuousSentence = contSig
-    ? `Indépendamment de ${multiple.categoricalPredictor}, ${multiple.continuousPredictor} prédit ${direction} ${multiple.outcome}, et cette relation est significative, b = ${formatValue(
-        b,
-        3
-      )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}, PRE = ${formatPre(contPre)}.`
-    : `Indépendamment de ${multiple.categoricalPredictor}, ${multiple.continuousPredictor} prédit ${direction} ${multiple.outcome}, mais cette relation est non-significative, b = ${formatValue(
-        b,
-        3
-      )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}, PRE = ${formatPre(contPre)}.`;
+    const sig1 = isSignificantP(mainTwoContinuous.p1);
+    const sig2 = isSignificantP(mainTwoContinuous.p2);
+    if (sig1 === null || sig2 === null) return "";
 
-  return `${categoricalSentence} ${continuousSentence}`;
-}, [multiple]);
+    const pText1 = normalizePText(mainTwoContinuous.p1);
+    const pText2 = normalizePText(mainTwoContinuous.p2);
+    const preText1 = preSuffix(mainTwoContinuous.pre1);
+    const preText2 = preSuffix(mainTwoContinuous.pre2);
 
-const multipleMixedExplain = useMemo(() => {
-  const numericReady = [multiple.m1, multiple.m2, multiple.b].every(hasNumber);
-  if (!numericReady || !multiple.catP.trim() || !multiple.contP.trim()) return "";
+    const dir1 = b1 > 0 ? "positivement" : b1 < 0 ? "négativement" : "";
+    const dir2 = b2 > 0 ? "positivement" : b2 < 0 ? "négativement" : "";
 
-  const m1 = parseValue(multiple.m1);
-  const m2 = parseValue(multiple.m2);
-  const b = parseValue(multiple.b);
-  const catSig = isSignificantP(multiple.catP);
-  const contSig = isSignificantP(multiple.contP);
+    const sentence1 = sig1
+      ? `Indépendamment de ${mainTwoContinuous.predictor2}, ${mainTwoContinuous.predictor1} prédit ${dir1} ${mainTwoContinuous.outcome}, et cette relation est significative, b = ${formatValue(
+          b1,
+          3
+        )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}${preText1}.`
+      : `Indépendamment de ${mainTwoContinuous.predictor2}, ${mainTwoContinuous.predictor1} prédit ${dir1} ${mainTwoContinuous.outcome}, mais cette relation est non-significative, b = ${formatValue(
+          b1,
+          3
+        )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}${preText1}.`;
 
-  if (catSig === null || contSig === null) return "";
+    const sentence2 = sig2
+      ? `Indépendamment de ${mainTwoContinuous.predictor1}, ${mainTwoContinuous.predictor2} prédit ${dir2} ${mainTwoContinuous.outcome}, et cette relation est significative, b = ${formatValue(
+          b2,
+          3
+        )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}${preText2}.`
+      : `Indépendamment de ${mainTwoContinuous.predictor1}, ${mainTwoContinuous.predictor2} prédit ${dir2} ${mainTwoContinuous.outcome}, mais cette relation est non-significative, b = ${formatValue(
+          b2,
+          3
+        )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}${preText2}.`;
 
-  const higherGroup = m1 > m2 ? multiple.group1 : multiple.group2;
+    return `${sentence1} ${sentence2}`;
+  }, [mainTwoContinuous]);
 
-  const simpleCat = catSig
-    ? `À ${multiple.continuousPredictor} égal, les ${higherGroup} ont le score le plus élevé sur ${multiple.outcome}.`
-    : `À ${multiple.continuousPredictor} égal, la différence liée à ${multiple.categoricalPredictor} n’est pas significative.`;
+  const mainTwoContinuousExplain = useMemo(() => {
+    const numericReady = [mainTwoContinuous.b1, mainTwoContinuous.b2].every(hasNumber);
+    if (!numericReady || !mainTwoContinuous.p1.trim() || !mainTwoContinuous.p2.trim()) return "";
 
-  const simpleCont = contSig
-    ? b >= 0
-      ? `À ${multiple.categoricalPredictor} égal, plus ${multiple.continuousPredictor} augmente, plus ${multiple.outcome} augmente.`
-      : `À ${multiple.categoricalPredictor} égal, plus ${multiple.continuousPredictor} augmente, plus ${multiple.outcome} diminue.`
-    : b >= 0
-    ? `À ${multiple.categoricalPredictor} égal, ${multiple.continuousPredictor} est positivement associé à ${multiple.outcome}, mais pas de manière significative.`
-    : `À ${multiple.categoricalPredictor} égal, ${multiple.continuousPredictor} est négativement associé à ${multiple.outcome}, mais pas de manière significative.`;
+    const b1 = parseValue(mainTwoContinuous.b1);
+    const b2 = parseValue(mainTwoContinuous.b2);
+    const sig1 = isSignificantP(mainTwoContinuous.p1);
+    const sig2 = isSignificantP(mainTwoContinuous.p2);
 
-  return `${simpleCat} ${simpleCont}`;
-}, [multiple]);
+    if (sig1 === null || sig2 === null) return "";
 
-const twoContinuousApa = useMemo(() => {
-  const numericReady = [
-    twoContinuousMultiple.b1,
-    twoContinuousMultiple.t1,
-    twoContinuousMultiple.df1,
-    twoContinuousMultiple.pre1,
-    twoContinuousMultiple.b2,
-    twoContinuousMultiple.t2,
-    twoContinuousMultiple.df2,
-    twoContinuousMultiple.pre2,
-  ].every(hasNumber);
+    const text1 = sig1
+      ? b1 >= 0
+        ? `À ${mainTwoContinuous.predictor2} égal, plus ${mainTwoContinuous.predictor1} augmente, plus ${mainTwoContinuous.outcome} augmente.`
+        : `À ${mainTwoContinuous.predictor2} égal, plus ${mainTwoContinuous.predictor1} augmente, plus ${mainTwoContinuous.outcome} diminue.`
+      : `À ${mainTwoContinuous.predictor2} égal, l’effet de ${mainTwoContinuous.predictor1} n’est pas significatif.`;
 
-  if (!numericReady || !twoContinuousMultiple.p1.trim() || !twoContinuousMultiple.p2.trim()) return "";
+    const text2 = sig2
+      ? b2 >= 0
+        ? `À ${mainTwoContinuous.predictor1} égal, plus ${mainTwoContinuous.predictor2} augmente, plus ${mainTwoContinuous.outcome} augmente.`
+        : `À ${mainTwoContinuous.predictor1} égal, plus ${mainTwoContinuous.predictor2} augmente, plus ${mainTwoContinuous.outcome} diminue.`
+      : `À ${mainTwoContinuous.predictor1} égal, l’effet de ${mainTwoContinuous.predictor2} n’est pas significatif.`;
 
-  const b1 = parseValue(twoContinuousMultiple.b1);
-  const t1 = parseValue(twoContinuousMultiple.t1);
-  const df1 = parseValue(twoContinuousMultiple.df1);
-  const pre1 = parseValue(twoContinuousMultiple.pre1);
+    return `${text1} ${text2}`;
+  }, [mainTwoContinuous]);
 
-  const b2 = parseValue(twoContinuousMultiple.b2);
-  const t2 = parseValue(twoContinuousMultiple.t2);
-  const df2 = parseValue(twoContinuousMultiple.df2);
-  const pre2 = parseValue(twoContinuousMultiple.pre2);
+  const mainTwoCategoricalApa = useMemo(() => {
+    const numericReady = [
+      twoCategorical.meanA1,
+      twoCategorical.sdA1,
+      twoCategorical.meanA2,
+      twoCategorical.sdA2,
+      twoCategorical.fA,
+      twoCategorical.df1A,
+      twoCategorical.df2A,
+      twoCategorical.meanB1,
+      twoCategorical.sdB1,
+      twoCategorical.meanB2,
+      twoCategorical.sdB2,
+      twoCategorical.fB,
+      twoCategorical.df1B,
+      twoCategorical.df2B,
+    ].every(hasNumber);
 
-  const sig1 = isSignificantP(twoContinuousMultiple.p1);
-  const sig2 = isSignificantP(twoContinuousMultiple.p2);
-  if (sig1 === null || sig2 === null) return "";
+    if (!numericReady || !twoCategorical.pA.trim() || !twoCategorical.pB.trim()) return "";
 
-  const pText1 = normalizePText(twoContinuousMultiple.p1);
-  const pText2 = normalizePText(twoContinuousMultiple.p2);
+    const meanA1 = parseValue(twoCategorical.meanA1);
+    const sdA1 = parseValue(twoCategorical.sdA1);
+    const meanA2 = parseValue(twoCategorical.meanA2);
+    const sdA2 = parseValue(twoCategorical.sdA2);
+    const fA = parseValue(twoCategorical.fA);
+    const df1A = parseValue(twoCategorical.df1A);
+    const df2A = parseValue(twoCategorical.df2A);
 
-  const dir1 = b1 > 0 ? "positivement" : b1 < 0 ? "négativement" : "";
-  const dir2 = b2 > 0 ? "positivement" : b2 < 0 ? "négativement" : "";
+    const meanB1 = parseValue(twoCategorical.meanB1);
+    const sdB1 = parseValue(twoCategorical.sdB1);
+    const meanB2 = parseValue(twoCategorical.meanB2);
+    const sdB2 = parseValue(twoCategorical.sdB2);
+    const fB = parseValue(twoCategorical.fB);
+    const df1B = parseValue(twoCategorical.df1B);
+    const df2B = parseValue(twoCategorical.df2B);
 
-  const sentence1 = sig1
-    ? `Indépendamment de ${twoContinuousMultiple.predictor2}, ${twoContinuousMultiple.predictor1} prédit ${dir1} ${twoContinuousMultiple.outcome}, et cette relation est significative, b = ${formatValue(
-        b1,
-        3
-      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}, PRE = ${formatPre(pre1)}.`
-    : `Indépendamment de ${twoContinuousMultiple.predictor2}, ${twoContinuousMultiple.predictor1} prédit ${dir1} ${twoContinuousMultiple.outcome}, mais cette relation est non-significative, b = ${formatValue(
-        b1,
-        3
-      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}, PRE = ${formatPre(pre1)}.`;
+    const sigA = isSignificantP(twoCategorical.pA);
+    const sigB = isSignificantP(twoCategorical.pB);
+    if (sigA === null || sigB === null) return "";
 
-  const sentence2 = sig2
-    ? `Indépendamment de ${twoContinuousMultiple.predictor1}, ${twoContinuousMultiple.predictor2} prédit ${dir2} ${twoContinuousMultiple.outcome}, et cette relation est significative, b = ${formatValue(
-        b2,
-        3
-      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}, PRE = ${formatPre(pre2)}.`
-    : `Indépendamment de ${twoContinuousMultiple.predictor1}, ${twoContinuousMultiple.predictor2} prédit ${dir2} ${twoContinuousMultiple.outcome}, mais cette relation est non-significative, b = ${formatValue(
-        b2,
-        3
-      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}, PRE = ${formatPre(pre2)}.`;
+    const pAText = normalizePText(twoCategorical.pA);
+    const pBText = normalizePText(twoCategorical.pB);
+    const preAText = preSuffix(twoCategorical.preA);
+    const preBText = preSuffix(twoCategorical.preB);
 
-  return `${sentence1} ${sentence2}`;
-}, [twoContinuousMultiple]);
+    const higherA = meanA1 > meanA2 ? twoCategorical.levelA1 : twoCategorical.levelA2;
+    const lowerA = meanA1 > meanA2 ? twoCategorical.levelA2 : twoCategorical.levelA1;
+    const higherMeanA = meanA1 > meanA2 ? meanA1 : meanA2;
+    const lowerMeanA = meanA1 > meanA2 ? meanA2 : meanA1;
+    const higherSdA = meanA1 > meanA2 ? sdA1 : sdA2;
+    const lowerSdA = meanA1 > meanA2 ? sdA2 : sdA1;
 
-const twoContinuousExplain = useMemo(() => {
-  const numericReady = [twoContinuousMultiple.b1, twoContinuousMultiple.b2].every(hasNumber);
-  if (!numericReady || !twoContinuousMultiple.p1.trim() || !twoContinuousMultiple.p2.trim()) return "";
+    const higherB = meanB1 > meanB2 ? twoCategorical.levelB1 : twoCategorical.levelB2;
+    const lowerB = meanB1 > meanB2 ? twoCategorical.levelB2 : twoCategorical.levelB1;
+    const higherMeanB = meanB1 > meanB2 ? meanB1 : meanB2;
+    const lowerMeanB = meanB1 > meanB2 ? meanB2 : meanB1;
+    const higherSdB = meanB1 > meanB2 ? sdB1 : sdB2;
+    const lowerSdB = meanB1 > meanB2 ? sdB2 : sdB1;
 
-  const b1 = parseValue(twoContinuousMultiple.b1);
-  const b2 = parseValue(twoContinuousMultiple.b2);
-  const sig1 = isSignificantP(twoContinuousMultiple.p1);
-  const sig2 = isSignificantP(twoContinuousMultiple.p2);
+    const sentenceA = sigA
+      ? `L’effet principal de ${twoCategorical.factorA} est significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+          df2A,
+          0
+        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Indépendamment de ${twoCategorical.factorB}, les ${higherA} (M = ${formatValue(
+          higherMeanA,
+          3
+        )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerA} (M = ${formatValue(
+          lowerMeanA,
+          3
+        )}, ET = ${formatValue(lowerSdA, 3)}).`
+      : `L’effet principal de ${twoCategorical.factorA} n’est pas significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+          df2A,
+          0
+        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Au niveau descriptif, les ${higherA} (M = ${formatValue(
+          higherMeanA,
+          3
+        )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé que les ${lowerA} (M = ${formatValue(
+          lowerMeanA,
+          3
+        )}, ET = ${formatValue(lowerSdA, 3)}).`;
 
-  if (sig1 === null || sig2 === null) return "";
+    const sentenceB = sigB
+      ? `L’effet principal de ${twoCategorical.factorB} est significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+          df2B,
+          0
+        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Indépendamment de ${twoCategorical.factorA}, les ${higherB} (M = ${formatValue(
+          higherMeanB,
+          3
+        )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerB} (M = ${formatValue(
+          lowerMeanB,
+          3
+        )}, ET = ${formatValue(lowerSdB, 3)}).`
+      : `L’effet principal de ${twoCategorical.factorB} n’est pas significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+          df2B,
+          0
+        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Au niveau descriptif, les ${higherB} (M = ${formatValue(
+          higherMeanB,
+          3
+        )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé que les ${lowerB} (M = ${formatValue(
+          lowerMeanB,
+          3
+        )}, ET = ${formatValue(lowerSdB, 3)}).`;
 
-  const text1 = sig1
-    ? b1 >= 0
-      ? `À ${twoContinuousMultiple.predictor2} égal, plus ${twoContinuousMultiple.predictor1} augmente, plus ${twoContinuousMultiple.outcome} augmente.`
-      : `À ${twoContinuousMultiple.predictor2} égal, plus ${twoContinuousMultiple.predictor1} augmente, plus ${twoContinuousMultiple.outcome} diminue.`
-    : `À ${twoContinuousMultiple.predictor2} égal, l’effet de ${twoContinuousMultiple.predictor1} n’est pas significatif.`;
-
-  const text2 = sig2
-    ? b2 >= 0
-      ? `À ${twoContinuousMultiple.predictor1} égal, plus ${twoContinuousMultiple.predictor2} augmente, plus ${twoContinuousMultiple.outcome} augmente.`
-      : `À ${twoContinuousMultiple.predictor1} égal, plus ${twoContinuousMultiple.predictor2} augmente, plus ${twoContinuousMultiple.outcome} diminue.`
-    : `À ${twoContinuousMultiple.predictor1} égal, l’effet de ${twoContinuousMultiple.predictor2} n’est pas significatif.`;
-
-  return `${text1} ${text2}`;
-}, [twoContinuousMultiple]);
-
-const factorialApa = useMemo(() => {
-  const mainAReady = [
-    factorial.meanA1,
-    factorial.sdA1,
-    factorial.meanA2,
-    factorial.sdA2,
-    factorial.fA,
-    factorial.df1A,
-    factorial.df2A,
-    factorial.preA,
-    factorial.meanB1,
-    factorial.sdB1,
-    factorial.meanB2,
-    factorial.sdB2,
-    factorial.fB,
-    factorial.df1B,
-    factorial.df2B,
-    factorial.preB,
-  ].every(hasNumber);
-
-  if (!mainAReady || !factorial.pA.trim() || !factorial.pB.trim()) return "";
-
-  const meanA1 = parseValue(factorial.meanA1);
-  const sdA1 = parseValue(factorial.sdA1);
-  const meanA2 = parseValue(factorial.meanA2);
-  const sdA2 = parseValue(factorial.sdA2);
-  const fA = parseValue(factorial.fA);
-  const df1A = parseValue(factorial.df1A);
-  const df2A = parseValue(factorial.df2A);
-  const preA = parseValue(factorial.preA);
-
-  const meanB1 = parseValue(factorial.meanB1);
-  const sdB1 = parseValue(factorial.sdB1);
-  const meanB2 = parseValue(factorial.meanB2);
-  const sdB2 = parseValue(factorial.sdB2);
-  const fB = parseValue(factorial.fB);
-  const df1B = parseValue(factorial.df1B);
-  const df2B = parseValue(factorial.df2B);
-  const preB = parseValue(factorial.preB);
-
-  const sigA = isSignificantP(factorial.pA);
-  const sigB = isSignificantP(factorial.pB);
-  if (sigA === null || sigB === null) return "";
-
-  const pAText = normalizePText(factorial.pA);
-  const pBText = normalizePText(factorial.pB);
-
-  const higherA = meanA1 > meanA2 ? factorial.levelA1 : factorial.levelA2;
-  const lowerA = meanA1 > meanA2 ? factorial.levelA2 : factorial.levelA1;
-  const higherMeanA = meanA1 > meanA2 ? meanA1 : meanA2;
-  const lowerMeanA = meanA1 > meanA2 ? meanA2 : meanA1;
-  const higherSdA = meanA1 > meanA2 ? sdA1 : sdA2;
-  const lowerSdA = meanA1 > meanA2 ? sdA2 : sdA1;
-
-  const higherB = meanB1 > meanB2 ? factorial.levelB1 : factorial.levelB2;
-  const lowerB = meanB1 > meanB2 ? factorial.levelB2 : factorial.levelB1;
-  const higherMeanB = meanB1 > meanB2 ? meanB1 : meanB2;
-  const lowerMeanB = meanB1 > meanB2 ? meanB2 : meanB1;
-  const higherSdB = meanB1 > meanB2 ? sdB1 : sdB2;
-  const lowerSdB = meanB1 > meanB2 ? sdB2 : sdB1;
-
-  const sentenceA = sigA
-    ? `L’effet principal de ${factorial.factorA} est significatif, F(${formatValue(df1A, 0)}, ${formatValue(
-        df2A,
-        0
-      )}) = ${formatValue(fA, 3)}, ${pAText}, PRE = ${formatPre(preA)}. Indépendamment de ${factorial.factorB}, les ${higherA} (M = ${formatValue(
-        higherMeanA,
-        3
-      )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${factorial.outcome} que les ${lowerA} (M = ${formatValue(
-        lowerMeanA,
-        3
-      )}, ET = ${formatValue(lowerSdA, 3)}).`
-    : `L’effet principal de ${factorial.factorA} n’est pas significatif, F(${formatValue(df1A, 0)}, ${formatValue(
-        df2A,
-        0
-      )}) = ${formatValue(fA, 3)}, ${pAText}, PRE = ${formatPre(preA)}. Au niveau descriptif, les ${higherA} (M = ${formatValue(
-        higherMeanA,
-        3
-      )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé que les ${lowerA} (M = ${formatValue(
-        lowerMeanA,
-        3
-      )}, ET = ${formatValue(lowerSdA, 3)}).`;
-
-  const sentenceB = sigB
-    ? `L’effet principal de ${factorial.factorB} est significatif, F(${formatValue(df1B, 0)}, ${formatValue(
-        df2B,
-        0
-      )}) = ${formatValue(fB, 3)}, ${pBText}, PRE = ${formatPre(preB)}. Indépendamment de ${factorial.factorA}, les ${higherB} (M = ${formatValue(
-        higherMeanB,
-        3
-      )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${factorial.outcome} que les ${lowerB} (M = ${formatValue(
-        lowerMeanB,
-        3
-      )}, ET = ${formatValue(lowerSdB, 3)}).`
-    : `L’effet principal de ${factorial.factorB} n’est pas significatif, F(${formatValue(df1B, 0)}, ${formatValue(
-        df2B,
-        0
-      )}) = ${formatValue(fB, 3)}, ${pBText}, PRE = ${formatPre(preB)}. Au niveau descriptif, les ${higherB} (M = ${formatValue(
-        higherMeanB,
-        3
-      )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé que les ${lowerB} (M = ${formatValue(
-        lowerMeanB,
-        3
-      )}, ET = ${formatValue(lowerSdB, 3)}).`;
-
-  if (factorialMode === "mainOnly") {
     return `${sentenceA} ${sentenceB}`;
-  }
+  }, [twoCategorical]);
 
-  const intReady = [factorial.fInt, factorial.df1Int, factorial.df2Int, factorial.preInt].every(hasNumber);
-  if (!intReady || !factorial.pInt.trim()) return "";
+  const interactionMixedApa = useMemo(() => {
+    const numericReady = [
+      interactionMixed.m1,
+      interactionMixed.sd1,
+      interactionMixed.m2,
+      interactionMixed.sd2,
+      interactionMixed.catF,
+      interactionMixed.catDf1,
+      interactionMixed.catDf2,
+      interactionMixed.b,
+      interactionMixed.contT,
+      interactionMixed.contDf,
+      interactionMixed.intF,
+      interactionMixed.intDf1,
+      interactionMixed.intDf2,
+    ].every(hasNumber);
 
-  const fInt = parseValue(factorial.fInt);
-  const df1Int = parseValue(factorial.df1Int);
-  const df2Int = parseValue(factorial.df2Int);
-  const preInt = parseValue(factorial.preInt);
-  const sigInt = isSignificantP(factorial.pInt);
-  if (sigInt === null) return "";
+    if (!numericReady || !interactionMixed.catP.trim() || !interactionMixed.contP.trim() || !interactionMixed.intP.trim()) {
+      return "";
+    }
 
-  const pIntText = normalizePText(factorial.pInt);
+    const m1 = parseValue(interactionMixed.m1);
+    const sd1 = parseValue(interactionMixed.sd1);
+    const m2 = parseValue(interactionMixed.m2);
+    const sd2 = parseValue(interactionMixed.sd2);
 
-  const sentenceInt = sigInt
-    ? `L’interaction entre ${factorial.factorA} et ${factorial.factorB} est significative, F(${formatValue(
-        df1Int,
-        0
-      )}, ${formatValue(df2Int, 0)}) = ${formatValue(fInt, 3)}, ${pIntText}, PRE = ${formatPre(
-        preInt
-      )}. L’examen du graphique ou des effets simples permet ensuite de préciser le motif de l’interaction.`
-    : `L’interaction entre ${factorial.factorA} et ${factorial.factorB} n’est pas significative, F(${formatValue(
-        df1Int,
-        0
-      )}, ${formatValue(df2Int, 0)}) = ${formatValue(fInt, 3)}, ${pIntText}, PRE = ${formatPre(preInt)}.`;
+    const catF = parseValue(interactionMixed.catF);
+    const catDf1 = parseValue(interactionMixed.catDf1);
+    const catDf2 = parseValue(interactionMixed.catDf2);
 
-  return `${sentenceA} ${sentenceB} ${sentenceInt}`;
-}, [factorial, factorialMode]);
+    const b = parseValue(interactionMixed.b);
+    const contT = parseValue(interactionMixed.contT);
+    const contDf = parseValue(interactionMixed.contDf);
 
-const factorialExplain = useMemo(() => {
-  if (factorialMode === "withInteraction") {
-    return "Si l’interaction est significative, ajoute ensuite l’interprétation du motif observé à partir du graphique ou des effets simples.";
-  }
+    const intF = parseValue(interactionMixed.intF);
+    const intDf1 = parseValue(interactionMixed.intDf1);
+    const intDf2 = parseValue(interactionMixed.intDf2);
 
-  return "Ici, tu reportes seulement les deux effets principaux.";
-}, [factorialMode]);
+    const catSig = isSignificantP(interactionMixed.catP);
+    const contSig = isSignificantP(interactionMixed.contP);
+    const intSig = isSignificantP(interactionMixed.intP);
 
+    if (catSig === null || contSig === null || intSig === null) return "";
+
+    const catPText = normalizePText(interactionMixed.catP);
+    const contPText = normalizePText(interactionMixed.contP);
+    const intPText = normalizePText(interactionMixed.intP);
+
+    const catPreText = preSuffix(interactionMixed.catPre);
+    const contPreText = preSuffix(interactionMixed.contPre);
+    const intPreText = preSuffix(interactionMixed.intPre);
+
+    const higherGroup = m1 > m2 ? interactionMixed.group1 : interactionMixed.group2;
+    const lowerGroup = m1 > m2 ? interactionMixed.group2 : interactionMixed.group1;
+    const higherMean = m1 > m2 ? m1 : m2;
+    const lowerMean = m1 > m2 ? m2 : m1;
+    const higherSd = m1 > m2 ? sd1 : sd2;
+    const lowerSd = m1 > m2 ? sd2 : sd1;
+
+    const catSentence = catSig
+      ? `L’effet principal de ${interactionMixed.categoricalPredictor} est significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
+          catDf2,
+          0
+        )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}. Indépendamment de ${interactionMixed.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
+          higherMean,
+          3
+        )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${interactionMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
+          lowerMean,
+          3
+        )}, ET = ${formatValue(lowerSd, 3)}).`
+      : `L’effet principal de ${interactionMixed.categoricalPredictor} n’est pas significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
+          catDf2,
+          0
+        )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}.`;
+
+    const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
+    const contSentence = contSig
+      ? `L’effet principal de ${interactionMixed.continuousPredictor} indique une relation ${direction} avec ${interactionMixed.outcome}, b = ${formatValue(
+          b,
+          3
+        )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}${contPreText}.`
+      : `L’effet principal de ${interactionMixed.continuousPredictor} indique une relation ${direction} avec ${interactionMixed.outcome}, mais elle est non-significative, b = ${formatValue(
+          b,
+          3
+        )}, t(${formatValue(contDf, 0)}) = ${formatValue(contT, 3)}, ${contPText}${contPreText}.`;
+
+    const intSentence = intSig
+      ? `L’interaction entre ${interactionMixed.categoricalPredictor} et ${interactionMixed.continuousPredictor} est significative, F(${formatValue(
+          intDf1,
+          0
+        )}, ${formatValue(intDf2, 0)}) = ${formatValue(intF, 3)}, ${intPText}${intPreText}. L’examen du graphique ou des effets simples permet ensuite de préciser le motif de l’interaction.`
+      : `L’interaction entre ${interactionMixed.categoricalPredictor} et ${interactionMixed.continuousPredictor} n’est pas significative, F(${formatValue(
+          intDf1,
+          0
+        )}, ${formatValue(intDf2, 0)}) = ${formatValue(intF, 3)}, ${intPText}${intPreText}.`;
+
+    return `${catSentence} ${contSentence} ${intSentence}`;
+  }, [interactionMixed]);
+
+  const interactionMixedExplain = useMemo(() => {
+    return "Ici, l’effet de la variable continue peut changer selon la modalité de la variable catégorielle. Utilise le graphique ou les effets simples si l’interaction est significative.";
+  }, []);
+
+  const interactionTwoContinuousApa = useMemo(() => {
+    const numericReady = [
+      interactionTwoContinuous.b1,
+      interactionTwoContinuous.t1,
+      interactionTwoContinuous.df1,
+      interactionTwoContinuous.b2,
+      interactionTwoContinuous.t2,
+      interactionTwoContinuous.df2,
+      interactionTwoContinuous.bInt,
+      interactionTwoContinuous.tInt,
+      interactionTwoContinuous.dfInt,
+    ].every(hasNumber);
+
+    if (!numericReady || !interactionTwoContinuous.p1.trim() || !interactionTwoContinuous.p2.trim() || !interactionTwoContinuous.pInt.trim()) {
+      return "";
+    }
+
+    const b1 = parseValue(interactionTwoContinuous.b1);
+    const t1 = parseValue(interactionTwoContinuous.t1);
+    const df1 = parseValue(interactionTwoContinuous.df1);
+    const b2 = parseValue(interactionTwoContinuous.b2);
+    const t2 = parseValue(interactionTwoContinuous.t2);
+    const df2 = parseValue(interactionTwoContinuous.df2);
+    const bInt = parseValue(interactionTwoContinuous.bInt);
+    const tInt = parseValue(interactionTwoContinuous.tInt);
+    const dfInt = parseValue(interactionTwoContinuous.dfInt);
+
+    const sig1 = isSignificantP(interactionTwoContinuous.p1);
+    const sig2 = isSignificantP(interactionTwoContinuous.p2);
+    const sigInt = isSignificantP(interactionTwoContinuous.pInt);
+
+    if (sig1 === null || sig2 === null || sigInt === null) return "";
+
+    const pText1 = normalizePText(interactionTwoContinuous.p1);
+    const pText2 = normalizePText(interactionTwoContinuous.p2);
+    const pTextInt = normalizePText(interactionTwoContinuous.pInt);
+
+    const preText1 = preSuffix(interactionTwoContinuous.pre1);
+    const preText2 = preSuffix(interactionTwoContinuous.pre2);
+    const preTextInt = preSuffix(interactionTwoContinuous.preInt);
+
+    const dir1 = b1 > 0 ? "positivement" : b1 < 0 ? "négativement" : "";
+    const dir2 = b2 > 0 ? "positivement" : b2 < 0 ? "négativement" : "";
+
+    const sentence1 = sig1
+      ? `L’effet principal de ${interactionTwoContinuous.predictor1} indique une relation ${dir1} avec ${interactionTwoContinuous.outcome}, b = ${formatValue(
+          b1,
+          3
+        )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}${preText1}.`
+      : `L’effet principal de ${interactionTwoContinuous.predictor1} indique une relation ${dir1} avec ${interactionTwoContinuous.outcome}, mais elle est non-significative, b = ${formatValue(
+          b1,
+          3
+        )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 3)}, ${pText1}${preText1}.`;
+
+    const sentence2 = sig2
+      ? `L’effet principal de ${interactionTwoContinuous.predictor2} indique une relation ${dir2} avec ${interactionTwoContinuous.outcome}, b = ${formatValue(
+          b2,
+          3
+        )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}${preText2}.`
+      : `L’effet principal de ${interactionTwoContinuous.predictor2} indique une relation ${dir2} avec ${interactionTwoContinuous.outcome}, mais elle est non-significative, b = ${formatValue(
+          b2,
+          3
+        )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 3)}, ${pText2}${preText2}.`;
+
+    const intSentence = sigInt
+      ? `L’interaction entre ${interactionTwoContinuous.predictor1} et ${interactionTwoContinuous.predictor2} est significative, b = ${formatValue(
+          bInt,
+          3
+        )}, t(${formatValue(dfInt, 0)}) = ${formatValue(tInt, 3)}, ${pTextInt}${preTextInt}.`
+      : `L’interaction entre ${interactionTwoContinuous.predictor1} et ${interactionTwoContinuous.predictor2} n’est pas significative, b = ${formatValue(
+          bInt,
+          3
+        )}, t(${formatValue(dfInt, 0)}) = ${formatValue(tInt, 3)}, ${pTextInt}${preTextInt}.`;
+
+    return `${sentence1} ${sentence2} ${intSentence}`;
+  }, [interactionTwoContinuous]);
+
+  const interactionTwoContinuousExplain = useMemo(() => {
+    return "Si l’interaction est significative, cela signifie que la pente d’un prédicteur change selon le niveau de l’autre.";
+  }, []);
+
+  const interactionTwoCategoricalApa = useMemo(() => {
+    const numericReady = [
+      twoCategorical.meanA1,
+      twoCategorical.sdA1,
+      twoCategorical.meanA2,
+      twoCategorical.sdA2,
+      twoCategorical.fA,
+      twoCategorical.df1A,
+      twoCategorical.df2A,
+      twoCategorical.meanB1,
+      twoCategorical.sdB1,
+      twoCategorical.meanB2,
+      twoCategorical.sdB2,
+      twoCategorical.fB,
+      twoCategorical.df1B,
+      twoCategorical.df2B,
+      twoCategorical.fInt,
+      twoCategorical.df1Int,
+      twoCategorical.df2Int,
+    ].every(hasNumber);
+
+    if (!numericReady || !twoCategorical.pA.trim() || !twoCategorical.pB.trim() || !twoCategorical.pInt.trim()) {
+      return "";
+    }
+
+    const meanA1 = parseValue(twoCategorical.meanA1);
+    const sdA1 = parseValue(twoCategorical.sdA1);
+    const meanA2 = parseValue(twoCategorical.meanA2);
+    const sdA2 = parseValue(twoCategorical.sdA2);
+    const fA = parseValue(twoCategorical.fA);
+    const df1A = parseValue(twoCategorical.df1A);
+    const df2A = parseValue(twoCategorical.df2A);
+
+    const meanB1 = parseValue(twoCategorical.meanB1);
+    const sdB1 = parseValue(twoCategorical.sdB1);
+    const meanB2 = parseValue(twoCategorical.meanB2);
+    const sdB2 = parseValue(twoCategorical.sdB2);
+    const fB = parseValue(twoCategorical.fB);
+    const df1B = parseValue(twoCategorical.df1B);
+    const df2B = parseValue(twoCategorical.df2B);
+
+    const fInt = parseValue(twoCategorical.fInt);
+    const df1Int = parseValue(twoCategorical.df1Int);
+    const df2Int = parseValue(twoCategorical.df2Int);
+
+    const sigA = isSignificantP(twoCategorical.pA);
+    const sigB = isSignificantP(twoCategorical.pB);
+    const sigInt = isSignificantP(twoCategorical.pInt);
+
+    if (sigA === null || sigB === null || sigInt === null) return "";
+
+    const pAText = normalizePText(twoCategorical.pA);
+    const pBText = normalizePText(twoCategorical.pB);
+    const pIntText = normalizePText(twoCategorical.pInt);
+    const preAText = preSuffix(twoCategorical.preA);
+    const preBText = preSuffix(twoCategorical.preB);
+    const preIntText = preSuffix(twoCategorical.preInt);
+
+    const higherA = meanA1 > meanA2 ? twoCategorical.levelA1 : twoCategorical.levelA2;
+    const lowerA = meanA1 > meanA2 ? twoCategorical.levelA2 : twoCategorical.levelA1;
+    const higherMeanA = meanA1 > meanA2 ? meanA1 : meanA2;
+    const lowerMeanA = meanA1 > meanA2 ? meanA2 : meanA1;
+    const higherSdA = meanA1 > meanA2 ? sdA1 : sdA2;
+    const lowerSdA = meanA1 > meanA2 ? sdA2 : sdA1;
+
+    const higherB = meanB1 > meanB2 ? twoCategorical.levelB1 : twoCategorical.levelB2;
+    const lowerB = meanB1 > meanB2 ? twoCategorical.levelB2 : twoCategorical.levelB1;
+    const higherMeanB = meanB1 > meanB2 ? meanB1 : meanB2;
+    const lowerMeanB = meanB1 > meanB2 ? meanB2 : meanB1;
+    const higherSdB = meanB1 > meanB2 ? sdB1 : sdB2;
+    const lowerSdB = meanB1 > meanB2 ? sdB2 : sdB1;
+
+    const sentenceA = sigA
+      ? `L’effet principal de ${twoCategorical.factorA} est significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+          df2A,
+          0
+        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Indépendamment de ${twoCategorical.factorB}, les ${higherA} (M = ${formatValue(
+          higherMeanA,
+          3
+        )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerA} (M = ${formatValue(
+          lowerMeanA,
+          3
+        )}, ET = ${formatValue(lowerSdA, 3)}).`
+      : `L’effet principal de ${twoCategorical.factorA} n’est pas significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+          df2A,
+          0
+        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}.`;
+
+    const sentenceB = sigB
+      ? `L’effet principal de ${twoCategorical.factorB} est significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+          df2B,
+          0
+        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Indépendamment de ${twoCategorical.factorA}, les ${higherB} (M = ${formatValue(
+          higherMeanB,
+          3
+        )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerB} (M = ${formatValue(
+          lowerMeanB,
+          3
+        )}, ET = ${formatValue(lowerSdB, 3)}).`
+      : `L’effet principal de ${twoCategorical.factorB} n’est pas significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+          df2B,
+          0
+        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}.`;
+
+    const intSentence = sigInt
+      ? `L’interaction entre ${twoCategorical.factorA} et ${twoCategorical.factorB} est significative, F(${formatValue(
+          df1Int,
+          0
+        )}, ${formatValue(df2Int, 0)}) = ${formatValue(fInt, 3)}, ${pIntText}${preIntText}. L’examen du graphique ou des effets simples permet ensuite de préciser le motif de l’interaction.`
+      : `L’interaction entre ${twoCategorical.factorA} et ${twoCategorical.factorB} n’est pas significative, F(${formatValue(
+          df1Int,
+          0
+        )}, ${formatValue(df2Int, 0)}) = ${formatValue(fInt, 3)}, ${pIntText}${preIntText}.`;
+
+    return `${sentenceA} ${sentenceB} ${intSentence}`;
+  }, [twoCategorical]);
+
+  const interactionTwoCategoricalExplain = useMemo(() => {
+    return "Quand l’interaction est significative, il faut généralement compléter avec un graphique et/ou des effets simples.";
+  }, []);
 
   const explainItems = [
     {
@@ -782,7 +1193,7 @@ const factorialExplain = useMemo(() => {
       id: "jamovi",
       title: "Quels nombres copier depuis Jamovi ?",
       content:
-        "Pour 2 groupes : M, ET, t, ddl, p, PRE. Pour une régression simple : b, t, ddl, p, PRE. Pour un effet ajusté : la ligne du prédicteur testé dans le tableau des coefficients. Pour une interaction : l’effet d’interaction, mais aussi les effets principaux et idéalement le graphique pour l’interprétation.",
+        "Pour 2 groupes : M, ET, t, ddl erreur, p et PRE. Pour une régression simple : b, t, ddl erreur, p et PRE. Pour un effet principal en F : F, ddl1, ddl2, p et PRE.",
     },
     {
       id: "interaction",
@@ -792,40 +1203,43 @@ const factorialExplain = useMemo(() => {
     },
   ];
 
+  const currentApaText =
+    apaMode === "twoGroups"
+      ? twoGroupsApa
+      : apaMode === "simpleRegression"
+      ? simpleRegressionApa
+      : apaMode === "noInteraction"
+      ? noInteractionSubtype === "mixed"
+        ? mainMixedApa
+        : noInteractionSubtype === "twoContinuous"
+        ? mainTwoContinuousApa
+        : mainTwoCategoricalApa
+      : interactionSubtype === "mixed"
+      ? interactionMixedApa
+      : interactionSubtype === "twoContinuous"
+      ? interactionTwoContinuousApa
+      : interactionTwoCategoricalApa;
+
+  const currentApaSecondary =
+    apaMode === "simpleRegression"
+      ? simpleRegressionExplain
+      : apaMode === "noInteraction"
+      ? noInteractionSubtype === "mixed"
+        ? mainMixedExplain
+        : noInteractionSubtype === "twoContinuous"
+        ? mainTwoContinuousExplain
+        : "Ici, tu reportes deux effets principaux sans interaction."
+      : apaMode === "interaction"
+      ? interactionSubtype === "mixed"
+        ? interactionMixedExplain
+        : interactionSubtype === "twoContinuous"
+        ? interactionTwoContinuousExplain
+        : interactionTwoCategoricalExplain
+      : "Relis la phrase et adapte légèrement le vocabulaire si ton enseignant a une préférence de style.";
+
   return (
     <div className="app-shell">
-      {/* <header className="hero">
-        <div className="hero-copy">
-          <span className="badge">Analyse quantitatives helper</span>
-          <h1>PRE, APA et interprétation pour tes sorties Jamovi</h1>
-          <p>
-            Jamovi te donne les chiffres. Ce site t’aide à calculer le PRE, rédiger des résultats propres
-            en français et comprendre ce que tes coefficients veulent dire.
-          </p>
-          <div className="hero-actions">
-            <button className="primary-button" onClick={() => setTab("pre")}>
-              Calculer PRE
-            </button>
-            <button className="secondary-button" onClick={() => setTab("apa")}>
-              Écrire un résultat APA
-            </button>
-          </div>
-        </div>
-
-        <div className="hero-panel">
-          <p className="mini-title">Pensé pour V1</p>
-          <ul>
-            <li>PRE à partir de F ou des SCE</li>
-            <li>APA pour 2 groupes, VI continue, effet ajusté, interaction</li>
-            <li>Explications claires sur b, l’intercept, le codage et le centrage</li>
-          </ul>
-        </div>
-      </header> */}
-
       <nav className="top-nav">
-        {/* <button className={tab === "home" ? "nav-button active" : "nav-button"} onClick={() => setTab("home")}>
-          Accueil
-        </button> */}
         <button
           className={tab === "pre" ? "nav-button active" : "nav-button"}
           onClick={() => setTab("pre")}
@@ -847,56 +1261,6 @@ const factorialExplain = useMemo(() => {
       </nav>
 
       <main className="main-content">
-        {tab === "home" && (
-          <section className="page-grid">
-            <div className="panel large">
-              <h2>Choisis ce dont tu as besoin</h2>
-              <div className="feature-grid">
-                <button className="feature-card" onClick={() => setTab("pre")}>
-                  <h3>Calculer PRE</h3>
-                  <p>À partir de F, N, PA, PC ou à partir de SCEc et SCEa.</p>
-                </button>
-
-                <button className="feature-card" onClick={() => setTab("apa")}>
-                  <h3>Rédiger APA</h3>
-                  <p>
-                    Obtiens une phrase propre en français à partir des valeurs
-                    Jamovi.
-                  </p>
-                </button>
-
-                <button
-                  className="feature-card"
-                  onClick={() => setTab("explain")}
-                >
-                  <h3>Comprendre les résultats</h3>
-                  <p>
-                    Intercept, pente, codage, centrage, interaction et quoi
-                    copier depuis Jamovi.
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            <div className="panel">
-              <h2>Petit rappel</h2>
-              <p className="soft-text">
-                Tu peux entrer des nombres avec une virgule ou un point. Le site
-                accepte les deux.
-              </p>
-              <div className="mini-stack">
-                <div className="mini-note">
-                  <strong>Exemple :</strong> 0,031 ou 0.031
-                </div>
-                <div className="mini-note">
-                  <strong>Conseil :</strong> commence par PRE ou APA, puis ouvre
-                  Explain si tu bloques sur l’interprétation.
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
         {tab === "pre" && (
           <section className="page-grid">
             <div className="panel large">
@@ -904,23 +1268,18 @@ const factorialExplain = useMemo(() => {
                 <div>
                   <h2>Calculer PRE</h2>
                   <p className="soft-text">
-                    Choisis la formule qui correspond à ce que tu as sous les
-                    yeux dans ton exercice.
+                    Choisis la formule qui correspond à ce que tu as sous les yeux dans ton exercice.
                   </p>
                 </div>
                 <div className="mode-switch">
                   <button
-                    className={
-                      preMode === "f" ? "mode-button active" : "mode-button"
-                    }
+                    className={preMode === "f" ? "mode-button active" : "mode-button"}
                     onClick={() => setPreMode("f")}
                   >
                     Depuis F
                   </button>
                   <button
-                    className={
-                      preMode === "sce" ? "mode-button active" : "mode-button"
-                    }
+                    className={preMode === "sce" ? "mode-button active" : "mode-button"}
                     onClick={() => setPreMode("sce")}
                   >
                     Depuis SCE
@@ -945,20 +1304,16 @@ const factorialExplain = useMemo(() => {
                   <TextField
                     label="PA"
                     value={preFromF.pa}
-                    onChange={(value) =>
-                      setPreFromF({ ...preFromF, pa: value })
-                    }
+                    onChange={(value) => setPreFromF({ ...preFromF, pa: value })}
                     placeholder="ex. 4"
-                    helper="Nombre de paramètres du modèle augmenté"
+                    helper="modèle augmenté"
                   />
                   <TextField
                     label="PC"
                     value={preFromF.pc}
-                    onChange={(value) =>
-                      setPreFromF({ ...preFromF, pc: value })
-                    }
+                    onChange={(value) => setPreFromF({ ...preFromF, pc: value })}
                     placeholder="ex. 3"
-                    helper="Nombre de paramètres du modèle contraint"
+                    helper="modèle contraint"
                   />
                 </div>
               )}
@@ -968,17 +1323,13 @@ const factorialExplain = useMemo(() => {
                   <TextField
                     label="SCE du modèle contraint (SCEc)"
                     value={preFromSce.scec}
-                    onChange={(value) =>
-                      setPreFromSce({ ...preFromSce, scec: value })
-                    }
+                    onChange={(value) => setPreFromSce({ ...preFromSce, scec: value })}
                     placeholder="ex. 1624,80"
                   />
                   <TextField
                     label="SCE du modèle augmenté (SCEa)"
                     value={preFromSce.scea}
-                    onChange={(value) =>
-                      setPreFromSce({ ...preFromSce, scea: value })
-                    }
+                    onChange={(value) => setPreFromSce({ ...preFromSce, scea: value })}
                     placeholder="ex. 963,48"
                   />
                 </div>
@@ -987,26 +1338,17 @@ const factorialExplain = useMemo(() => {
               <div className="note-box">
                 <strong>Quand utiliser quoi ?</strong>
                 <p>
-                  Utilise <strong>Depuis F</strong> quand ton exercice ou ton
-                  corrigé raisonne en comparaison de modèles avec{" "}
-                  <strong>F, N, PA et PC</strong>. Utilise{" "}
-                  <strong>Depuis SCE</strong> quand tu as directement les
-                  erreurs du modèle contraint et du modèle augmenté.
+                  Utilise <strong>Depuis F</strong> quand ton exercice ou ton corrigé raisonne en comparaison de modèles avec{" "}
+                  <strong>F, N, PA et PC</strong>. Utilise <strong>Depuis SCE</strong> quand tu as directement les erreurs du modèle contraint et du modèle augmenté.
                 </p>
               </div>
             </div>
 
             <div className="panel sticky">
-              <ResultCard
-                title="Résultat"
-                text={preOutput.value}
-                secondary={preOutput.explanation}
-              />
+              <ResultCard title="Résultat" text={preOutput.value} secondary={preOutput.explanation} />
               <button
                 className="copy-button"
-                onClick={() =>
-                  copyText(`${preOutput.value}\n${preOutput.explanation}`)
-                }
+                onClick={() => copyText(`${preOutput.value}\n${preOutput.explanation}`)}
                 disabled={!preOutput.value}
               >
                 Copier
@@ -1015,650 +1357,571 @@ const factorialExplain = useMemo(() => {
           </section>
         )}
 
-     {tab === "apa" && (
-  <section className="page-grid">
-    <div className="panel large">
-      <div className="section-head">
-        <div>
-          <h2>Rédiger un résultat APA</h2>
-          <p className="soft-text">Choisis le type de résultat que tu veux reporter.</p>
-        </div>
-      </div>
-
-      <div className="feature-grid compact">
-        <button
-          className={apaMode === "twoGroups" ? "feature-card active-card" : "feature-card"}
-          onClick={() => setApaMode("twoGroups")}
-        >
-          <h3>2 groupes</h3>
-          <p>VI catégorielle à 2 modalités</p>
-        </button>
-
-        <button
-          className={apaMode === "continuous" ? "feature-card active-card" : "feature-card"}
-          onClick={() => setApaMode("continuous")}
-        >
-          <h3>VI continue</h3>
-          <p>Régression simple</p>
-        </button>
-
-        <button
-          className={apaMode === "multiple" ? "feature-card active-card" : "feature-card"}
-          onClick={() => setApaMode("multiple")}
-        >
-          <h3>Régression multiple</h3>
-          <p>2 continus ou 1 catégoriel + 1 continu</p>
-        </button>
-
-        <button
-          className={apaMode === "factorial" ? "feature-card active-card" : "feature-card"}
-          onClick={() => setApaMode("factorial")}
-        >
-          <h3>Plan factoriel</h3>
-          <p>2 variables catégorielles</p>
-        </button>
-      </div>
-
-      {apaMode === "twoGroups" && (
-        <div className="stack">
-          <div className="form-grid">
-            <TextField
-              label="Nom de la VI"
-              value={twoGroups.iv}
-              onChange={(value) => setTwoGroups({ ...twoGroups, iv: value })}
-            />
-            <TextField
-              label="Nom de la VD"
-              value={twoGroups.dv}
-              onChange={(value) => setTwoGroups({ ...twoGroups, dv: value })}
-            />
-            <TextField
-              label="Nom groupe 1"
-              value={twoGroups.group1}
-              onChange={(value) => setTwoGroups({ ...twoGroups, group1: value })}
-            />
-            <TextField
-              label="Nom groupe 2"
-              value={twoGroups.group2}
-              onChange={(value) => setTwoGroups({ ...twoGroups, group2: value })}
-            />
-            <TextField
-              label="M groupe 1"
-              value={twoGroups.m1}
-              onChange={(value) => setTwoGroups({ ...twoGroups, m1: value })}
-            />
-            <TextField
-              label="ET groupe 1"
-              value={twoGroups.sd1}
-              onChange={(value) => setTwoGroups({ ...twoGroups, sd1: value })}
-            />
-            <TextField
-              label="M groupe 2"
-              value={twoGroups.m2}
-              onChange={(value) => setTwoGroups({ ...twoGroups, m2: value })}
-            />
-            <TextField
-              label="ET groupe 2"
-              value={twoGroups.sd2}
-              onChange={(value) => setTwoGroups({ ...twoGroups, sd2: value })}
-            />
-            <TextField
-              label="t"
-              value={twoGroups.t}
-              onChange={(value) => setTwoGroups({ ...twoGroups, t: value })}
-            />
-            <TextField
-              label="ddl (residuals)"
-              value={twoGroups.df}
-              onChange={(value) => setTwoGroups({ ...twoGroups, df: value })}
-            />
-            <TextField
-              label="p (texte)"
-              value={twoGroups.p}
-              onChange={(value) => setTwoGroups({ ...twoGroups, p: value })}
-              placeholder="ex. < .001 ou .031"
-            />
-            <TextField
-              label="PRE"
-              value={twoGroups.pre}
-              onChange={(value) => setTwoGroups({ ...twoGroups, pre: value })}
-            />
-          </div>
-          <div className="note-box">
-            <strong>À copier depuis Jamovi</strong>
-            <p>M, ET, t, ddl (residuals), p, PRE.</p>
-          </div>
-        </div>
-      )}
-
-      {apaMode === "continuous" && (
-        <div className="stack">
-          <div className="form-grid">
-            <TextField
-              label="Prédicteur"
-              value={continuous.predictor}
-              onChange={(value) => setContinuous({ ...continuous, predictor: value })}
-            />
-            <TextField
-              label="Variable dépendante"
-              value={continuous.outcome}
-              onChange={(value) => setContinuous({ ...continuous, outcome: value })}
-            />
-            <TextField
-              label="b"
-              value={continuous.b}
-              onChange={(value) => setContinuous({ ...continuous, b: value })}
-            />
-            <TextField
-              label="t"
-              value={continuous.t}
-              onChange={(value) => setContinuous({ ...continuous, t: value })}
-            />
-            <TextField
-              label="ddl (residuals)"
-              value={continuous.df}
-              onChange={(value) => setContinuous({ ...continuous, df: value })}
-            />
-            <TextField
-              label="p (texte)"
-              value={continuous.p}
-              onChange={(value) => setContinuous({ ...continuous, p: value })}
-              placeholder="ex. .687 ou < .001"
-            />
-            <TextField
-              label="PRE"
-              value={continuous.pre}
-              onChange={(value) => setContinuous({ ...continuous, pre: value })}
-            />
-            <TextField
-              label="Intercept (optionnel)"
-              value={continuous.intercept}
-              onChange={(value) => setContinuous({ ...continuous, intercept: value })}
-            />
-          </div>
-          <div className="note-box">
-            <strong>À copier depuis Jamovi</strong>
-            <p>b, t, ddl (residuals), p, PRE. L’intercept est utile pour l’interprétation, pas toujours pour la phrase finale.</p>
-          </div>
-        </div>
-      )}
-
-      {apaMode === "multiple" && (
-        <div className="stack">
-          <div className="mode-switch left">
-            <button
-              className={multipleMode === "mixed" ? "mode-button active" : "mode-button"}
-              onClick={() => setMultipleMode("mixed")}
-            >
-              1 catégoriel + 1 continu
-            </button>
-            <button
-              className={multipleMode === "twoContinuous" ? "mode-button active" : "mode-button"}
-              onClick={() => setMultipleMode("twoContinuous")}
-            >
-              2 continus
-            </button>
-          </div>
-
-          {multipleMode === "mixed" && (
-            <>
-              <div className="form-grid">
-                <TextField
-                  label="Variable dépendante"
-                  value={multiple.outcome}
-                  onChange={(value) => setMultiple({ ...multiple, outcome: value })}
-                />
-                <TextField
-                  label="Prédicteur catégoriel"
-                  value={multiple.categoricalPredictor}
-                  onChange={(value) => setMultiple({ ...multiple, categoricalPredictor: value })}
-                />
-                <TextField
-                  label="Prédicteur continu"
-                  value={multiple.continuousPredictor}
-                  onChange={(value) => setMultiple({ ...multiple, continuousPredictor: value })}
-                />
-              </div>
-
-              <div className="note-box">
-                <strong>Effet du prédicteur catégoriel</strong>
-                <div className="form-grid">
-                  <TextField
-                    label="Nom groupe 1"
-                    value={multiple.group1}
-                    onChange={(value) => setMultiple({ ...multiple, group1: value })}
-                  />
-                  <TextField
-                    label="Nom groupe 2"
-                    value={multiple.group2}
-                    onChange={(value) => setMultiple({ ...multiple, group2: value })}
-                  />
-                  <TextField
-                    label="M groupe 1"
-                    value={multiple.m1}
-                    onChange={(value) => setMultiple({ ...multiple, m1: value })}
-                  />
-                  <TextField
-                    label="ET groupe 1"
-                    value={multiple.sd1}
-                    onChange={(value) => setMultiple({ ...multiple, sd1: value })}
-                  />
-                  <TextField
-                    label="M groupe 2"
-                    value={multiple.m2}
-                    onChange={(value) => setMultiple({ ...multiple, m2: value })}
-                  />
-                  <TextField
-                    label="ET groupe 2"
-                    value={multiple.sd2}
-                    onChange={(value) => setMultiple({ ...multiple, sd2: value })}
-                  />
-                  <TextField
-                    label="t"
-                    value={multiple.catT}
-                    onChange={(value) => setMultiple({ ...multiple, catT: value })}
-                  />
-                  <TextField
-                    label="ddl"
-                    value={multiple.catDf}
-                    onChange={(value) => setMultiple({ ...multiple, catDf: value })}
-                  />
-                  <TextField
-                    label="p (texte)"
-                    value={multiple.catP}
-                    onChange={(value) => setMultiple({ ...multiple, catP: value })}
-                    placeholder="ex. < .001"
-                  />
-                  <TextField
-                    label="PRE"
-                    value={multiple.catPre}
-                    onChange={(value) => setMultiple({ ...multiple, catPre: value })}
-                  />
+        {tab === "apa" && (
+          <section className="page-grid">
+            <div className="panel large">
+              <div className="section-head">
+                <div>
+                  <h2>Rédiger un résultat APA</h2>
+                  <p className="soft-text">Choisis le type de résultat que tu veux reporter.</p>
                 </div>
               </div>
 
-              <div className="note-box">
-                <strong>Effet du prédicteur continu</strong>
-                <div className="form-grid">
-                  <TextField
-                    label="b"
-                    value={multiple.b}
-                    onChange={(value) => setMultiple({ ...multiple, b: value })}
-                  />
-                  <TextField
-                    label="t"
-                    value={multiple.contT}
-                    onChange={(value) => setMultiple({ ...multiple, contT: value })}
-                  />
-                  <TextField
-                    label="ddl"
-                    value={multiple.contDf}
-                    onChange={(value) => setMultiple({ ...multiple, contDf: value })}
-                  />
-                  <TextField
-                    label="p (texte)"
-                    value={multiple.contP}
-                    onChange={(value) => setMultiple({ ...multiple, contP: value })}
-                    placeholder="ex. .687"
-                  />
-                  <TextField
-                    label="PRE"
-                    value={multiple.contPre}
-                    onChange={(value) => setMultiple({ ...multiple, contPre: value })}
+              <div className="feature-grid compact">
+                <button
+                  className={apaMode === "twoGroups" ? "feature-card active-card" : "feature-card"}
+                  onClick={() => setApaMode("twoGroups")}
+                >
+                  <h3>2 groupes</h3>
+                  <p>VI catégorielle à 2 modalités</p>
+                </button>
+
+                <button
+                  className={apaMode === "simpleRegression" ? "feature-card active-card" : "feature-card"}
+                  onClick={() => setApaMode("simpleRegression")}
+                >
+                  <h3>Régression simple</h3>
+                  <p>1 variable continue</p>
+                </button>
+
+                <button
+                  className={apaMode === "noInteraction" ? "feature-card active-card" : "feature-card"}
+                  onClick={() => setApaMode("noInteraction")}
+                >
+                  <h3>Sans interaction</h3>
+                  <p>Effets principaux uniquement</p>
+                </button>
+
+                <button
+                  className={apaMode === "interaction" ? "feature-card active-card" : "feature-card"}
+                  onClick={() => setApaMode("interaction")}
+                >
+                  <h3>Interaction</h3>
+                  <p>Modération / produit</p>
+                </button>
+              </div>
+
+              {apaMode === "twoGroups" && (
+                <div className="stack">
+                  <div className="form-grid">
+                    <TextField label="Nom de la VI" value={twoGroups.iv} onChange={(value) => setTwoGroups({ ...twoGroups, iv: value })} />
+                    <TextField label="Nom de la VD" value={twoGroups.dv} onChange={(value) => setTwoGroups({ ...twoGroups, dv: value })} />
+                    <TextField label="Nom groupe 1" value={twoGroups.group1} onChange={(value) => setTwoGroups({ ...twoGroups, group1: value })} />
+                    <TextField label="Nom groupe 2" value={twoGroups.group2} onChange={(value) => setTwoGroups({ ...twoGroups, group2: value })} />
+                    <TextField label="M groupe 1" value={twoGroups.m1} onChange={(value) => setTwoGroups({ ...twoGroups, m1: value })} />
+                    <TextField label="ET groupe 1" value={twoGroups.sd1} onChange={(value) => setTwoGroups({ ...twoGroups, sd1: value })} />
+                    <TextField label="M groupe 2" value={twoGroups.m2} onChange={(value) => setTwoGroups({ ...twoGroups, m2: value })} />
+                    <TextField label="ET groupe 2" value={twoGroups.sd2} onChange={(value) => setTwoGroups({ ...twoGroups, sd2: value })} />
+                    <TextField label="t" value={twoGroups.t} onChange={(value) => setTwoGroups({ ...twoGroups, t: value })} />
+                    <TextField label="ddl erreur" value={twoGroups.df} onChange={(value) => setTwoGroups({ ...twoGroups, df: value })} />
+                    <TextField
+                      label="p (texte)"
+                      value={twoGroups.p}
+                      onChange={(value) => setTwoGroups({ ...twoGroups, p: value })}
+                      placeholder="ex. < .001 ou .031"
+                    />
+                  </div>
+
+                  <PreInput
+                    title="PRE pour cet effet"
+                    value={twoGroups.pre}
+                    onChange={(next) => setTwoGroups({ ...twoGroups, pre: next })}
                   />
                 </div>
-              </div>
-            </>
-          )}
+              )}
 
-          {multipleMode === "twoContinuous" && (
-            <>
-              <div className="form-grid">
-                <TextField
-                  label="Variable dépendante"
-                  value={twoContinuousMultiple.outcome}
-                  onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, outcome: value })}
-                />
-                <TextField
-                  label="Prédicteur 1"
-                  value={twoContinuousMultiple.predictor1}
-                  onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, predictor1: value })}
-                />
-                <TextField
-                  label="Prédicteur 2"
-                  value={twoContinuousMultiple.predictor2}
-                  onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, predictor2: value })}
-                />
-              </div>
+              {apaMode === "simpleRegression" && (
+                <div className="stack">
+                  <div className="form-grid">
+                    <TextField
+                      label="Prédicteur"
+                      value={simpleRegression.predictor}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, predictor: value })}
+                    />
+                    <TextField
+                      label="Variable dépendante"
+                      value={simpleRegression.outcome}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, outcome: value })}
+                    />
+                    <TextField
+                      label="b"
+                      value={simpleRegression.b}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, b: value })}
+                    />
+                    <TextField
+                      label="t"
+                      value={simpleRegression.t}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, t: value })}
+                    />
+                    <TextField
+                      label="ddl erreur"
+                      value={simpleRegression.df}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, df: value })}
+                    />
+                    <TextField
+                      label="p (texte)"
+                      value={simpleRegression.p}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, p: value })}
+                      placeholder="ex. .687 ou < .001"
+                    />
+                    <TextField
+                      label="Intercept (optionnel)"
+                      value={simpleRegression.intercept}
+                      onChange={(value) => setSimpleRegression({ ...simpleRegression, intercept: value })}
+                    />
+                  </div>
 
-              <div className="note-box">
-                <strong>Effet du prédicteur 1</strong>
-                <div className="form-grid">
-                  <TextField
-                    label="b1"
-                    value={twoContinuousMultiple.b1}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, b1: value })}
-                  />
-                  <TextField
-                    label="t1"
-                    value={twoContinuousMultiple.t1}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, t1: value })}
-                  />
-                  <TextField
-                    label="ddl 1"
-                    value={twoContinuousMultiple.df1}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, df1: value })}
-                  />
-                  <TextField
-                    label="p1 (texte)"
-                    value={twoContinuousMultiple.p1}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, p1: value })}
-                  />
-                  <TextField
-                    label="PRE1"
-                    value={twoContinuousMultiple.pre1}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, pre1: value })}
+                  <PreInput
+                    title="PRE pour cet effet"
+                    value={simpleRegression.pre}
+                    onChange={(next) => setSimpleRegression({ ...simpleRegression, pre: next })}
                   />
                 </div>
-              </div>
+              )}
 
-              <div className="note-box">
-                <strong>Effet du prédicteur 2</strong>
-                <div className="form-grid">
-                  <TextField
-                    label="b2"
-                    value={twoContinuousMultiple.b2}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, b2: value })}
-                  />
-                  <TextField
-                    label="t2"
-                    value={twoContinuousMultiple.t2}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, t2: value })}
-                  />
-                  <TextField
-                    label="ddl 2"
-                    value={twoContinuousMultiple.df2}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, df2: value })}
-                  />
-                  <TextField
-                    label="p2 (texte)"
-                    value={twoContinuousMultiple.p2}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, p2: value })}
-                  />
-                  <TextField
-                    label="PRE2"
-                    value={twoContinuousMultiple.pre2}
-                    onChange={(value) => setTwoContinuousMultiple({ ...twoContinuousMultiple, pre2: value })}
-                  />
+              {apaMode === "noInteraction" && (
+                <div className="stack">
+                  <div className="mode-switch left">
+                    <button
+                      className={noInteractionSubtype === "mixed" ? "mode-button active" : "mode-button"}
+                      onClick={() => setNoInteractionSubtype("mixed")}
+                    >
+                      1 catégorielle + 1 continue
+                    </button>
+                    <button
+                      className={noInteractionSubtype === "twoContinuous" ? "mode-button active" : "mode-button"}
+                      onClick={() => setNoInteractionSubtype("twoContinuous")}
+                    >
+                      2 continues
+                    </button>
+                    <button
+                      className={noInteractionSubtype === "twoCategorical" ? "mode-button active" : "mode-button"}
+                      onClick={() => setNoInteractionSubtype("twoCategorical")}
+                    >
+                      2 catégorielles
+                    </button>
+                  </div>
+
+                  {noInteractionSubtype === "mixed" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField
+                          label="Variable dépendante"
+                          value={mainMixed.outcome}
+                          onChange={(value) => setMainMixed({ ...mainMixed, outcome: value })}
+                        />
+                        <TextField
+                          label="Prédicteur catégoriel"
+                          value={mainMixed.categoricalPredictor}
+                          onChange={(value) => setMainMixed({ ...mainMixed, categoricalPredictor: value })}
+                        />
+                        <TextField
+                          label="Prédicteur continu"
+                          value={mainMixed.continuousPredictor}
+                          onChange={(value) => setMainMixed({ ...mainMixed, continuousPredictor: value })}
+                        />
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet du prédicteur catégoriel</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Nom groupe 1" value={mainMixed.group1} onChange={(value) => setMainMixed({ ...mainMixed, group1: value })} />
+                          <TextField label="Nom groupe 2" value={mainMixed.group2} onChange={(value) => setMainMixed({ ...mainMixed, group2: value })} />
+                          <TextField label="M groupe 1" value={mainMixed.m1} onChange={(value) => setMainMixed({ ...mainMixed, m1: value })} />
+                          <TextField label="ET groupe 1" value={mainMixed.sd1} onChange={(value) => setMainMixed({ ...mainMixed, sd1: value })} />
+                          <TextField label="M groupe 2" value={mainMixed.m2} onChange={(value) => setMainMixed({ ...mainMixed, m2: value })} />
+                          <TextField label="ET groupe 2" value={mainMixed.sd2} onChange={(value) => setMainMixed({ ...mainMixed, sd2: value })} />
+                          <TextField label="t" value={mainMixed.catT} onChange={(value) => setMainMixed({ ...mainMixed, catT: value })} />
+                          <TextField label="ddl erreur" value={mainMixed.catDf} onChange={(value) => setMainMixed({ ...mainMixed, catDf: value })} />
+                          <TextField label="p (texte)" value={mainMixed.catP} onChange={(value) => setMainMixed({ ...mainMixed, catP: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur catégoriel"
+                            value={mainMixed.catPre}
+                            onChange={(next) => setMainMixed({ ...mainMixed, catPre: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet du prédicteur continu</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b" value={mainMixed.b} onChange={(value) => setMainMixed({ ...mainMixed, b: value })} />
+                          <TextField label="t" value={mainMixed.contT} onChange={(value) => setMainMixed({ ...mainMixed, contT: value })} />
+                          <TextField label="ddl erreur" value={mainMixed.contDf} onChange={(value) => setMainMixed({ ...mainMixed, contDf: value })} />
+                          <TextField label="p (texte)" value={mainMixed.contP} onChange={(value) => setMainMixed({ ...mainMixed, contP: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur continu"
+                            value={mainMixed.contPre}
+                            onChange={(next) => setMainMixed({ ...mainMixed, contPre: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {noInteractionSubtype === "twoContinuous" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField
+                          label="Variable dépendante"
+                          value={mainTwoContinuous.outcome}
+                          onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, outcome: value })}
+                        />
+                        <TextField
+                          label="Prédicteur 1"
+                          value={mainTwoContinuous.predictor1}
+                          onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, predictor1: value })}
+                        />
+                        <TextField
+                          label="Prédicteur 2"
+                          value={mainTwoContinuous.predictor2}
+                          onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, predictor2: value })}
+                        />
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet du prédicteur 1</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b1" value={mainTwoContinuous.b1} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, b1: value })} />
+                          <TextField label="t1" value={mainTwoContinuous.t1} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, t1: value })} />
+                          <TextField label="ddl erreur 1" value={mainTwoContinuous.df1} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, df1: value })} />
+                          <TextField label="p1 (texte)" value={mainTwoContinuous.p1} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, p1: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur 1"
+                            value={mainTwoContinuous.pre1}
+                            onChange={(next) => setMainTwoContinuous({ ...mainTwoContinuous, pre1: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet du prédicteur 2</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b2" value={mainTwoContinuous.b2} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, b2: value })} />
+                          <TextField label="t2" value={mainTwoContinuous.t2} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, t2: value })} />
+                          <TextField label="ddl erreur 2" value={mainTwoContinuous.df2} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, df2: value })} />
+                          <TextField label="p2 (texte)" value={mainTwoContinuous.p2} onChange={(value) => setMainTwoContinuous({ ...mainTwoContinuous, p2: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur 2"
+                            value={mainTwoContinuous.pre2}
+                            onChange={(next) => setMainTwoContinuous({ ...mainTwoContinuous, pre2: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {noInteractionSubtype === "twoCategorical" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField label="Variable dépendante" value={twoCategorical.outcome} onChange={(value) => setTwoCategorical({ ...twoCategorical, outcome: value })} />
+                        <TextField label="Facteur A" value={twoCategorical.factorA} onChange={(value) => setTwoCategorical({ ...twoCategorical, factorA: value })} />
+                        <TextField label="Facteur B" value={twoCategorical.factorB} onChange={(value) => setTwoCategorical({ ...twoCategorical, factorB: value })} />
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du facteur A</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Niveau A1" value={twoCategorical.levelA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelA1: value })} />
+                          <TextField label="Niveau A2" value={twoCategorical.levelA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelA2: value })} />
+                          <TextField label="M A1" value={twoCategorical.meanA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanA1: value })} />
+                          <TextField label="ET A1" value={twoCategorical.sdA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdA1: value })} />
+                          <TextField label="M A2" value={twoCategorical.meanA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanA2: value })} />
+                          <TextField label="ET A2" value={twoCategorical.sdA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdA2: value })} />
+                          <TextField label="F A" value={twoCategorical.fA} onChange={(value) => setTwoCategorical({ ...twoCategorical, fA: value })} />
+                          <TextField label="ddl1 A" value={twoCategorical.df1A} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1A: value })} />
+                          <TextField label="ddl2 A" value={twoCategorical.df2A} onChange={(value) => setTwoCategorical({ ...twoCategorical, df2A: value })} />
+                          <TextField label="p A (texte)" value={twoCategorical.pA} onChange={(value) => setTwoCategorical({ ...twoCategorical, pA: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du facteur A"
+                            value={twoCategorical.preA}
+                            onChange={(next) => setTwoCategorical({ ...twoCategorical, preA: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du facteur B</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Niveau B1" value={twoCategorical.levelB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelB1: value })} />
+                          <TextField label="Niveau B2" value={twoCategorical.levelB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelB2: value })} />
+                          <TextField label="M B1" value={twoCategorical.meanB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanB1: value })} />
+                          <TextField label="ET B1" value={twoCategorical.sdB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdB1: value })} />
+                          <TextField label="M B2" value={twoCategorical.meanB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanB2: value })} />
+                          <TextField label="ET B2" value={twoCategorical.sdB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdB2: value })} />
+                          <TextField label="F B" value={twoCategorical.fB} onChange={(value) => setTwoCategorical({ ...twoCategorical, fB: value })} />
+                          <TextField label="ddl1 B" value={twoCategorical.df1B} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1B: value })} />
+                          <TextField label="ddl2 B" value={twoCategorical.df2B} onChange={(value) => setTwoCategorical({ ...twoCategorical, df2B: value })} />
+                          <TextField label="p B (texte)" value={twoCategorical.pB} onChange={(value) => setTwoCategorical({ ...twoCategorical, pB: value })} />
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du facteur B"
+                            value={twoCategorical.preB}
+                            onChange={(next) => setTwoCategorical({ ...twoCategorical, preB: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
-            </>
-          )}
+              )}
 
-          <div className="note-box">
-            <strong>À copier depuis Jamovi</strong>
-            <p>
-              Si tu as un prédicteur continu : b, t, ddl, p, PRE. Si tu as un prédicteur catégoriel : M, ET, t, ddl, p, PRE.
-            </p>
-          </div>
-        </div>
-      )}
+              {apaMode === "interaction" && (
+                <div className="stack">
+                  <div className="mode-switch left">
+                    <button
+                      className={interactionSubtype === "mixed" ? "mode-button active" : "mode-button"}
+                      onClick={() => setInteractionSubtype("mixed")}
+                    >
+                      1 catégorielle + 1 continue
+                    </button>
+                    <button
+                      className={interactionSubtype === "twoContinuous" ? "mode-button active" : "mode-button"}
+                      onClick={() => setInteractionSubtype("twoContinuous")}
+                    >
+                      2 continues
+                    </button>
+                    <button
+                      className={interactionSubtype === "twoCategorical" ? "mode-button active" : "mode-button"}
+                      onClick={() => setInteractionSubtype("twoCategorical")}
+                    >
+                      2 catégorielles
+                    </button>
+                  </div>
 
-      {apaMode === "factorial" && (
-        <div className="stack">
-          <div className="mode-switch left">
-            <button
-              className={factorialMode === "mainOnly" ? "mode-button active" : "mode-button"}
-              onClick={() => setFactorialMode("mainOnly")}
-            >
-              Sans interaction
-            </button>
-            <button
-              className={factorialMode === "withInteraction" ? "mode-button active" : "mode-button"}
-              onClick={() => setFactorialMode("withInteraction")}
-            >
-              Avec interaction
-            </button>
-          </div>
+                  {interactionSubtype === "mixed" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField label="Variable dépendante" value={interactionMixed.outcome} onChange={(value) => setInteractionMixed({ ...interactionMixed, outcome: value })} />
+                        <TextField label="Prédicteur catégoriel" value={interactionMixed.categoricalPredictor} onChange={(value) => setInteractionMixed({ ...interactionMixed, categoricalPredictor: value })} />
+                        <TextField label="Prédicteur continu" value={interactionMixed.continuousPredictor} onChange={(value) => setInteractionMixed({ ...interactionMixed, continuousPredictor: value })} />
+                      </div>
 
-          <div className="form-grid">
-            <TextField
-              label="Variable dépendante"
-              value={factorial.outcome}
-              onChange={(value) => setFactorial({ ...factorial, outcome: value })}
-            />
-            <TextField
-              label="Facteur A"
-              value={factorial.factorA}
-              onChange={(value) => setFactorial({ ...factorial, factorA: value })}
-            />
-            <TextField
-              label="Facteur B"
-              value={factorial.factorB}
-              onChange={(value) => setFactorial({ ...factorial, factorB: value })}
-            />
-          </div>
+                      <div className="note-box">
+                        <strong>Effet principal du prédicteur catégoriel</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Nom groupe 1" value={interactionMixed.group1} onChange={(value) => setInteractionMixed({ ...interactionMixed, group1: value })} />
+                          <TextField label="Nom groupe 2" value={interactionMixed.group2} onChange={(value) => setInteractionMixed({ ...interactionMixed, group2: value })} />
+                          <TextField label="M groupe 1" value={interactionMixed.m1} onChange={(value) => setInteractionMixed({ ...interactionMixed, m1: value })} />
+                          <TextField label="ET groupe 1" value={interactionMixed.sd1} onChange={(value) => setInteractionMixed({ ...interactionMixed, sd1: value })} />
+                          <TextField label="M groupe 2" value={interactionMixed.m2} onChange={(value) => setInteractionMixed({ ...interactionMixed, m2: value })} />
+                          <TextField label="ET groupe 2" value={interactionMixed.sd2} onChange={(value) => setInteractionMixed({ ...interactionMixed, sd2: value })} />
+                          <TextField label="F" value={interactionMixed.catF} onChange={(value) => setInteractionMixed({ ...interactionMixed, catF: value })} />
+                          <TextField label="ddl1" value={interactionMixed.catDf1} onChange={(value) => setInteractionMixed({ ...interactionMixed, catDf1: value })} />
+                          <TextField label="ddl2" value={interactionMixed.catDf2} onChange={(value) => setInteractionMixed({ ...interactionMixed, catDf2: value })} />
+                          <TextField label="p (texte)" value={interactionMixed.catP} onChange={(value) => setInteractionMixed({ ...interactionMixed, catP: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE de l’effet principal catégoriel"
+                            value={interactionMixed.catPre}
+                            onChange={(next) => setInteractionMixed({ ...interactionMixed, catPre: next })}
+                          />
+                        </div>
+                      </div>
 
-          <div className="note-box">
-            <strong>Effet principal du facteur A</strong>
-            <div className="form-grid">
-              <TextField
-                label="Niveau A1"
-                value={factorial.levelA1}
-                onChange={(value) => setFactorial({ ...factorial, levelA1: value })}
-              />
-              <TextField
-                label="Niveau A2"
-                value={factorial.levelA2}
-                onChange={(value) => setFactorial({ ...factorial, levelA2: value })}
-              />
-              <TextField
-                label="M A1"
-                value={factorial.meanA1}
-                onChange={(value) => setFactorial({ ...factorial, meanA1: value })}
-              />
-              <TextField
-                label="ET A1"
-                value={factorial.sdA1}
-                onChange={(value) => setFactorial({ ...factorial, sdA1: value })}
-              />
-              <TextField
-                label="M A2"
-                value={factorial.meanA2}
-                onChange={(value) => setFactorial({ ...factorial, meanA2: value })}
-              />
-              <TextField
-                label="ET A2"
-                value={factorial.sdA2}
-                onChange={(value) => setFactorial({ ...factorial, sdA2: value })}
-              />
-              <TextField
-                label="F A"
-                value={factorial.fA}
-                onChange={(value) => setFactorial({ ...factorial, fA: value })}
-              />
-              <TextField
-                label="ddl1 A"
-                value={factorial.df1A}
-                onChange={(value) => setFactorial({ ...factorial, df1A: value })}
-              />
-              <TextField
-                label="ddl2 A"
-                value={factorial.df2A}
-                onChange={(value) => setFactorial({ ...factorial, df2A: value })}
-              />
-              <TextField
-                label="p A (texte)"
-                value={factorial.pA}
-                onChange={(value) => setFactorial({ ...factorial, pA: value })}
-              />
-              <TextField
-                label="PRE A"
-                value={factorial.preA}
-                onChange={(value) => setFactorial({ ...factorial, preA: value })}
-              />
+                      <div className="note-box">
+                        <strong>Effet principal du prédicteur continu</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b" value={interactionMixed.b} onChange={(value) => setInteractionMixed({ ...interactionMixed, b: value })} />
+                          <TextField label="t" value={interactionMixed.contT} onChange={(value) => setInteractionMixed({ ...interactionMixed, contT: value })} />
+                          <TextField label="ddl erreur" value={interactionMixed.contDf} onChange={(value) => setInteractionMixed({ ...interactionMixed, contDf: value })} />
+                          <TextField label="p (texte)" value={interactionMixed.contP} onChange={(value) => setInteractionMixed({ ...interactionMixed, contP: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE de l’effet principal continu"
+                            value={interactionMixed.contPre}
+                            onChange={(next) => setInteractionMixed({ ...interactionMixed, contPre: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Interaction</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="F interaction" value={interactionMixed.intF} onChange={(value) => setInteractionMixed({ ...interactionMixed, intF: value })} />
+                          <TextField label="ddl1 interaction" value={interactionMixed.intDf1} onChange={(value) => setInteractionMixed({ ...interactionMixed, intDf1: value })} />
+                          <TextField label="ddl2 interaction" value={interactionMixed.intDf2} onChange={(value) => setInteractionMixed({ ...interactionMixed, intDf2: value })} />
+                          <TextField label="p interaction (texte)" value={interactionMixed.intP} onChange={(value) => setInteractionMixed({ ...interactionMixed, intP: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE de l’interaction"
+                            value={interactionMixed.intPre}
+                            onChange={(next) => setInteractionMixed({ ...interactionMixed, intPre: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {interactionSubtype === "twoContinuous" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField label="Variable dépendante" value={interactionTwoContinuous.outcome} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, outcome: value })} />
+                        <TextField label="Prédicteur 1" value={interactionTwoContinuous.predictor1} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, predictor1: value })} />
+                        <TextField label="Prédicteur 2" value={interactionTwoContinuous.predictor2} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, predictor2: value })} />
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du prédicteur 1</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b1" value={interactionTwoContinuous.b1} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, b1: value })} />
+                          <TextField label="t1" value={interactionTwoContinuous.t1} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, t1: value })} />
+                          <TextField label="ddl erreur 1" value={interactionTwoContinuous.df1} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, df1: value })} />
+                          <TextField label="p1 (texte)" value={interactionTwoContinuous.p1} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, p1: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur 1"
+                            value={interactionTwoContinuous.pre1}
+                            onChange={(next) => setInteractionTwoContinuous({ ...interactionTwoContinuous, pre1: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du prédicteur 2</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b2" value={interactionTwoContinuous.b2} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, b2: value })} />
+                          <TextField label="t2" value={interactionTwoContinuous.t2} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, t2: value })} />
+                          <TextField label="ddl erreur 2" value={interactionTwoContinuous.df2} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, df2: value })} />
+                          <TextField label="p2 (texte)" value={interactionTwoContinuous.p2} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, p2: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du prédicteur 2"
+                            value={interactionTwoContinuous.pre2}
+                            onChange={(next) => setInteractionTwoContinuous({ ...interactionTwoContinuous, pre2: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Interaction</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="b interaction" value={interactionTwoContinuous.bInt} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, bInt: value })} />
+                          <TextField label="t interaction" value={interactionTwoContinuous.tInt} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, tInt: value })} />
+                          <TextField label="ddl erreur interaction" value={interactionTwoContinuous.dfInt} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, dfInt: value })} />
+                          <TextField label="p interaction (texte)" value={interactionTwoContinuous.pInt} onChange={(value) => setInteractionTwoContinuous({ ...interactionTwoContinuous, pInt: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE de l’interaction"
+                            value={interactionTwoContinuous.preInt}
+                            onChange={(next) => setInteractionTwoContinuous({ ...interactionTwoContinuous, preInt: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {interactionSubtype === "twoCategorical" && (
+                    <>
+                      <div className="form-grid">
+                        <TextField label="Variable dépendante" value={twoCategorical.outcome} onChange={(value) => setTwoCategorical({ ...twoCategorical, outcome: value })} />
+                        <TextField label="Facteur A" value={twoCategorical.factorA} onChange={(value) => setTwoCategorical({ ...twoCategorical, factorA: value })} />
+                        <TextField label="Facteur B" value={twoCategorical.factorB} onChange={(value) => setTwoCategorical({ ...twoCategorical, factorB: value })} />
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du facteur A</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Niveau A1" value={twoCategorical.levelA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelA1: value })} />
+                          <TextField label="Niveau A2" value={twoCategorical.levelA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelA2: value })} />
+                          <TextField label="M A1" value={twoCategorical.meanA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanA1: value })} />
+                          <TextField label="ET A1" value={twoCategorical.sdA1} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdA1: value })} />
+                          <TextField label="M A2" value={twoCategorical.meanA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanA2: value })} />
+                          <TextField label="ET A2" value={twoCategorical.sdA2} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdA2: value })} />
+                          <TextField label="F A" value={twoCategorical.fA} onChange={(value) => setTwoCategorical({ ...twoCategorical, fA: value })} />
+                          <TextField label="ddl1 A" value={twoCategorical.df1A} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1A: value })} />
+                          <TextField label="ddl2 A" value={twoCategorical.df2A} onChange={(value) => setTwoCategorical({ ...twoCategorical, df2A: value })} />
+                          <TextField label="p A (texte)" value={twoCategorical.pA} onChange={(value) => setTwoCategorical({ ...twoCategorical, pA: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du facteur A"
+                            value={twoCategorical.preA}
+                            onChange={(next) => setTwoCategorical({ ...twoCategorical, preA: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Effet principal du facteur B</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="Niveau B1" value={twoCategorical.levelB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelB1: value })} />
+                          <TextField label="Niveau B2" value={twoCategorical.levelB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, levelB2: value })} />
+                          <TextField label="M B1" value={twoCategorical.meanB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanB1: value })} />
+                          <TextField label="ET B1" value={twoCategorical.sdB1} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdB1: value })} />
+                          <TextField label="M B2" value={twoCategorical.meanB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, meanB2: value })} />
+                          <TextField label="ET B2" value={twoCategorical.sdB2} onChange={(value) => setTwoCategorical({ ...twoCategorical, sdB2: value })} />
+                          <TextField label="F B" value={twoCategorical.fB} onChange={(value) => setTwoCategorical({ ...twoCategorical, fB: value })} />
+                          <TextField label="ddl1 B" value={twoCategorical.df1B} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1B: value })} />
+                          <TextField label="ddl2 B" value={twoCategorical.df2B} onChange={(value) => setTwoCategorical({ ...twoCategorical, df2B: value })} />
+                          <TextField label="p B (texte)" value={twoCategorical.pB} onChange={(value) => setTwoCategorical({ ...twoCategorical, pB: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE du facteur B"
+                            value={twoCategorical.preB}
+                            onChange={(next) => setTwoCategorical({ ...twoCategorical, preB: next })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="note-box">
+                        <strong>Interaction</strong>
+                        <div className="form-grid" style={{ marginTop: 12 }}>
+                          <TextField label="F interaction" value={twoCategorical.fInt} onChange={(value) => setTwoCategorical({ ...twoCategorical, fInt: value })} />
+                          <TextField label="ddl1 interaction" value={twoCategorical.df1Int} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1Int: value })} />
+                          <TextField label="ddl2 interaction" value={twoCategorical.df2Int} onChange={(value) => setTwoCategorical({ ...twoCategorical, df2Int: value })} />
+                          <TextField label="p interaction (texte)" value={twoCategorical.pInt} onChange={(value) => setTwoCategorical({ ...twoCategorical, pInt: value })} />
+                        </div>
+                        <div style={{ marginTop: 14 }}>
+                          <PreInput
+                            title="PRE de l’interaction"
+                            value={twoCategorical.preInt}
+                            onChange={(next) => setTwoCategorical({ ...twoCategorical, preInt: next })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
 
-          <div className="note-box">
-            <strong>Effet principal du facteur B</strong>
-            <div className="form-grid">
-              <TextField
-                label="Niveau B1"
-                value={factorial.levelB1}
-                onChange={(value) => setFactorial({ ...factorial, levelB1: value })}
-              />
-              <TextField
-                label="Niveau B2"
-                value={factorial.levelB2}
-                onChange={(value) => setFactorial({ ...factorial, levelB2: value })}
-              />
-              <TextField
-                label="M B1"
-                value={factorial.meanB1}
-                onChange={(value) => setFactorial({ ...factorial, meanB1: value })}
-              />
-              <TextField
-                label="ET B1"
-                value={factorial.sdB1}
-                onChange={(value) => setFactorial({ ...factorial, sdB1: value })}
-              />
-              <TextField
-                label="M B2"
-                value={factorial.meanB2}
-                onChange={(value) => setFactorial({ ...factorial, meanB2: value })}
-              />
-              <TextField
-                label="ET B2"
-                value={factorial.sdB2}
-                onChange={(value) => setFactorial({ ...factorial, sdB2: value })}
-              />
-              <TextField
-                label="F B"
-                value={factorial.fB}
-                onChange={(value) => setFactorial({ ...factorial, fB: value })}
-              />
-              <TextField
-                label="ddl1 B"
-                value={factorial.df1B}
-                onChange={(value) => setFactorial({ ...factorial, df1B: value })}
-              />
-              <TextField
-                label="ddl2 B"
-                value={factorial.df2B}
-                onChange={(value) => setFactorial({ ...factorial, df2B: value })}
-              />
-              <TextField
-                label="p B (texte)"
-                value={factorial.pB}
-                onChange={(value) => setFactorial({ ...factorial, pB: value })}
-              />
-              <TextField
-                label="PRE B"
-                value={factorial.preB}
-                onChange={(value) => setFactorial({ ...factorial, preB: value })}
-              />
+            <div className="panel sticky">
+              <ResultCard title="Phrase prête à copier" text={currentApaText} secondary={currentApaSecondary} />
+              <button
+                className="copy-button"
+                onClick={() => copyText(`${currentApaText}\n${currentApaSecondary}`)}
+                disabled={!currentApaText}
+              >
+                Copier
+              </button>
             </div>
-          </div>
-
-          {factorialMode === "withInteraction" && (
-            <div className="note-box">
-              <strong>Interaction</strong>
-              <div className="form-grid">
-                <TextField
-                  label="F interaction"
-                  value={factorial.fInt}
-                  onChange={(value) => setFactorial({ ...factorial, fInt: value })}
-                />
-                <TextField
-                  label="ddl1 interaction"
-                  value={factorial.df1Int}
-                  onChange={(value) => setFactorial({ ...factorial, df1Int: value })}
-                />
-                <TextField
-                  label="ddl2 interaction"
-                  value={factorial.df2Int}
-                  onChange={(value) => setFactorial({ ...factorial, df2Int: value })}
-                />
-                <TextField
-                  label="p interaction (texte)"
-                  value={factorial.pInt}
-                  onChange={(value) => setFactorial({ ...factorial, pInt: value })}
-                />
-                <TextField
-                  label="PRE interaction"
-                  value={factorial.preInt}
-                  onChange={(value) => setFactorial({ ...factorial, preInt: value })}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="note-box">
-            <strong>À copier depuis Jamovi</strong>
-            <p>
-              Pour un plan factoriel : F, ddl1, ddl2, p, PRE, plus les descriptives (M, ET) pour chaque facteur.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-
-    <div className="panel sticky">
-      <ResultCard
-        title="Phrase prête à copier"
-        text={
-          apaMode === "twoGroups"
-            ? twoGroupsApa
-            : apaMode === "continuous"
-            ? continuousApa
-            : apaMode === "multiple"
-            ? multipleMode === "mixed"
-              ? multipleMixedApa
-              : twoContinuousApa
-            : factorialApa
-        }
-        secondary={
-          apaMode === "continuous"
-            ? continuousExplain
-            : apaMode === "multiple"
-            ? multipleMode === "mixed"
-              ? multipleMixedExplain
-              : twoContinuousExplain
-            : apaMode === "factorial"
-            ? factorialExplain
-            : "Relis la phrase et adapte légèrement le vocabulaire si ton enseignant a une préférence de style."
-        }
-      />
-      <button
-        className="copy-button"
-        onClick={() =>
-          copyText(
-            apaMode === "twoGroups"
-              ? twoGroupsApa
-              : apaMode === "continuous"
-              ? `${continuousApa}\n${continuousExplain}`
-              : apaMode === "multiple"
-              ? multipleMode === "mixed"
-                ? `${multipleMixedApa}\n${multipleMixedExplain}`
-                : `${twoContinuousApa}\n${twoContinuousExplain}`
-              : `${factorialApa}\n${factorialExplain}`
-          )
-        }
-        disabled={
-          !(
-            (apaMode === "twoGroups" && twoGroupsApa) ||
-            (apaMode === "continuous" && continuousApa) ||
-            (apaMode === "multiple" && ((multipleMode === "mixed" && multipleMixedApa) || (multipleMode === "twoContinuous" && twoContinuousApa))) ||
-            (apaMode === "factorial" && factorialApa)
-          )
-        }
-      >
-        Copier
-      </button>
-    </div>
-  </section>
-)}
+          </section>
+        )}
 
         {tab === "explain" && (
           <section className="page-grid single">
@@ -1674,21 +1937,13 @@ const factorialExplain = useMemo(() => {
                 {explainItems.map((item) => (
                   <div className="accordion-item" key={item.id}>
                     <button
-                      className={
-                        openExplain === item.id
-                          ? "accordion-button active"
-                          : "accordion-button"
-                      }
-                      onClick={() =>
-                        setOpenExplain(openExplain === item.id ? "" : item.id)
-                      }
+                      className={openExplain === item.id ? "accordion-button active" : "accordion-button"}
+                      onClick={() => setOpenExplain(openExplain === item.id ? "" : item.id)}
                     >
                       <span>{item.title}</span>
                       <span>{openExplain === item.id ? "−" : "+"}</span>
                     </button>
-                    {openExplain === item.id && (
-                      <div className="accordion-content">{item.content}</div>
-                    )}
+                    {openExplain === item.id && <div className="accordion-content">{item.content}</div>}
                   </div>
                 ))}
               </div>
