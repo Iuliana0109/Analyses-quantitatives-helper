@@ -6,6 +6,8 @@ type PreMode = "f" | "sce";
 type ApaMode = "twoGroups" | "simpleRegression" | "noInteraction" | "interaction";
 type ModelSubtype = "mixed" | "twoContinuous" | "twoCategorical";
 type PreMethod = "auto" | "manual";
+type SimpleEffectsFamily = "AwithinB" | "BwithinA";
+
 
 type PreControl = {
   method: PreMethod;
@@ -428,6 +430,28 @@ function App() {
     pInt: "",
     preInt: makePreControl(),
   });
+
+  const [simpleEffectsEnabled, setSimpleEffectsEnabled] = useState(false);
+const [simpleEffectsFamily, setSimpleEffectsFamily] = useState<SimpleEffectsFamily>("AwithinB");
+
+const [simpleEffects, setSimpleEffects] = useState({
+  s1m1: "",
+  s1sd1: "",
+  s1m2: "",
+  s1sd2: "",
+  s1t: "",
+  s1df: "",
+  s1p: "",
+  s1pre: makePreControl(),
+  s2m1: "",
+  s2sd1: "",
+  s2m2: "",
+  s2sd2: "",
+  s2t: "",
+  s2df: "",
+  s2p: "",
+  s2pre: makePreControl(),
+});
 
   const preOutput = useMemo(() => {
     if (preMode === "f") {
@@ -1182,6 +1206,126 @@ function App() {
     return "Quand l’interaction est significative, il faut généralement compléter avec un graphique et/ou des effets simples.";
   }, []);
 
+  const interactionTwoCategoricalIsSignificant = useMemo(() => {
+  const sig = isSignificantP(twoCategorical.pInt);
+  return sig === true;
+}, [twoCategorical.pInt]);
+
+const simpleEffectsApa = useMemo(() => {
+  const numericReady = [
+    simpleEffects.s1m1,
+    simpleEffects.s1sd1,
+    simpleEffects.s1m2,
+    simpleEffects.s1sd2,
+    simpleEffects.s1t,
+    simpleEffects.s1df,
+    simpleEffects.s2m1,
+    simpleEffects.s2sd1,
+    simpleEffects.s2m2,
+    simpleEffects.s2sd2,
+    simpleEffects.s2t,
+    simpleEffects.s2df,
+  ].every(hasNumber);
+
+  if (!numericReady || !simpleEffects.s1p.trim() || !simpleEffects.s2p.trim()) return "";
+
+  const isAwithinB = simpleEffectsFamily === "AwithinB";
+
+  const testedFactor = isAwithinB ? twoCategorical.factorA : twoCategorical.factorB;
+  const contextFactor = isAwithinB ? twoCategorical.factorB : twoCategorical.factorA;
+
+  const testedLevel1 = isAwithinB ? twoCategorical.levelA1 : twoCategorical.levelB1;
+  const testedLevel2 = isAwithinB ? twoCategorical.levelA2 : twoCategorical.levelB2;
+
+  const contextLevel1 = isAwithinB ? twoCategorical.levelB1 : twoCategorical.levelA1;
+  const contextLevel2 = isAwithinB ? twoCategorical.levelB2 : twoCategorical.levelA2;
+
+  const s1m1 = parseValue(simpleEffects.s1m1);
+  const s1sd1 = parseValue(simpleEffects.s1sd1);
+  const s1m2 = parseValue(simpleEffects.s1m2);
+  const s1sd2 = parseValue(simpleEffects.s1sd2);
+  const s1t = parseValue(simpleEffects.s1t);
+  const s1df = parseValue(simpleEffects.s1df);
+
+  const s2m1 = parseValue(simpleEffects.s2m1);
+  const s2sd1 = parseValue(simpleEffects.s2sd1);
+  const s2m2 = parseValue(simpleEffects.s2m2);
+  const s2sd2 = parseValue(simpleEffects.s2sd2);
+  const s2t = parseValue(simpleEffects.s2t);
+  const s2df = parseValue(simpleEffects.s2df);
+
+  const sig1 = isSignificantP(simpleEffects.s1p);
+  const sig2 = isSignificantP(simpleEffects.s2p);
+  if (sig1 === null || sig2 === null) return "";
+
+  const pText1 = normalizePText(simpleEffects.s1p);
+  const pText2 = normalizePText(simpleEffects.s2p);
+  const preText1 = preSuffix(simpleEffects.s1pre);
+  const preText2 = preSuffix(simpleEffects.s2pre);
+
+  const s1HigherIsFirst = s1m1 > s1m2;
+  const s1HigherLabel = s1HigherIsFirst ? testedLevel1 : testedLevel2;
+  const s1LowerLabel = s1HigherIsFirst ? testedLevel2 : testedLevel1;
+  const s1HigherMean = s1HigherIsFirst ? s1m1 : s1m2;
+  const s1LowerMean = s1HigherIsFirst ? s1m2 : s1m1;
+  const s1HigherSd = s1HigherIsFirst ? s1sd1 : s1sd2;
+  const s1LowerSd = s1HigherIsFirst ? s1sd2 : s1sd1;
+
+  const s2HigherIsFirst = s2m1 > s2m2;
+  const s2HigherLabel = s2HigherIsFirst ? testedLevel1 : testedLevel2;
+  const s2LowerLabel = s2HigherIsFirst ? testedLevel2 : testedLevel1;
+  const s2HigherMean = s2HigherIsFirst ? s2m1 : s2m2;
+  const s2LowerMean = s2HigherIsFirst ? s2m2 : s2m1;
+  const s2HigherSd = s2HigherIsFirst ? s2sd1 : s2sd2;
+  const s2LowerSd = s2HigherIsFirst ? s2sd2 : s2sd1;
+
+  const sentence1 = sig1
+    ? `L’effet simple de ${testedFactor} est significatif lorsque ${contextFactor} = ${contextLevel1}, t(${formatValue(
+        s1df,
+        0
+      )}) = ${formatValue(s1t, 2)}, ${pText1}${preText1}. La modalité ${s1HigherLabel} (M = ${formatValue(
+        s1HigherMean,
+        2
+      )}, ET = ${formatValue(s1HigherSd, 2)}) présente une moyenne plus élevée de ${twoCategorical.outcome} que la modalité ${s1LowerLabel} (M = ${formatValue(
+        s1LowerMean,
+        2
+      )}, ET = ${formatValue(s1LowerSd, 2)}).`
+    : `L’effet simple de ${testedFactor} n’est pas significatif lorsque ${contextFactor} = ${contextLevel1}, t(${formatValue(
+        s1df,
+        0
+      )}) = ${formatValue(s1t, 2)}, ${pText1}${preText1}. Au niveau descriptif, la modalité ${s1HigherLabel} (M = ${formatValue(
+        s1HigherMean,
+        2
+      )}, ET = ${formatValue(s1HigherSd, 2)}) présente une moyenne plus élevée de ${twoCategorical.outcome} que la modalité ${s1LowerLabel} (M = ${formatValue(
+        s1LowerMean,
+        2
+      )}, ET = ${formatValue(s1LowerSd, 2)}).`;
+
+  const sentence2 = sig2
+    ? `L’effet simple de ${testedFactor} est significatif lorsque ${contextFactor} = ${contextLevel2}, t(${formatValue(
+        s2df,
+        0
+      )}) = ${formatValue(s2t, 2)}, ${pText2}${preText2}. La modalité ${s2HigherLabel} (M = ${formatValue(
+        s2HigherMean,
+        2
+      )}, ET = ${formatValue(s2HigherSd, 2)}) présente une moyenne plus élevée de ${twoCategorical.outcome} que la modalité ${s2LowerLabel} (M = ${formatValue(
+        s2LowerMean,
+        2
+      )}, ET = ${formatValue(s2LowerSd, 2)}).`
+    : `L’effet simple de ${testedFactor} n’est pas significatif lorsque ${contextFactor} = ${contextLevel2}, t(${formatValue(
+        s2df,
+        0
+      )}) = ${formatValue(s2t, 2)}, ${pText2}${preText2}. Au niveau descriptif, la modalité ${s2HigherLabel} (M = ${formatValue(
+        s2HigherMean,
+        2
+      )}, ET = ${formatValue(s2HigherSd, 2)}) présente une moyenne plus élevée de ${twoCategorical.outcome} que la modalité ${s2LowerLabel} (M = ${formatValue(
+        s2LowerMean,
+        2
+      )}, ET = ${formatValue(s2LowerSd, 2)}).`;
+
+  return `${sentence1} ${sentence2}`;
+}, [simpleEffects, simpleEffectsFamily, twoCategorical]);
+
   const explainItems = [
     {
       id: "b",
@@ -1233,10 +1377,12 @@ function App() {
         ? mainTwoContinuousApa
         : mainTwoCategoricalApa
       : interactionSubtype === "mixed"
-      ? interactionMixedApa
-      : interactionSubtype === "twoContinuous"
-      ? interactionTwoContinuousApa
-      : interactionTwoCategoricalApa;
+? interactionMixedApa
+: interactionSubtype === "twoContinuous"
+? interactionTwoContinuousApa
+: simpleEffectsEnabled && interactionTwoCategoricalIsSignificant && simpleEffectsApa
+? `${interactionTwoCategoricalApa} ${simpleEffectsApa}`
+: interactionTwoCategoricalApa;
 
   const currentApaSecondary =
     apaMode === "simpleRegression"
@@ -1908,6 +2054,7 @@ function App() {
 
                       <div className="note-box">
                         <strong>Interaction</strong>
+                        
                         <div className="form-grid" style={{ marginTop: 12 }}>
                           <TextField label="F interaction" value={twoCategorical.fInt} onChange={(value) => setTwoCategorical({ ...twoCategorical, fInt: value })} />
                           <TextField label="ddl1 interaction" value={twoCategorical.df1Int} onChange={(value) => setTwoCategorical({ ...twoCategorical, df1Int: value })} />
@@ -1921,6 +2068,169 @@ function App() {
                             onChange={(next) => setTwoCategorical({ ...twoCategorical, preInt: next })}
                           />
                         </div>
+                        <div className="note-box">
+  <strong>Effets simples (optionnel)</strong>
+
+  <div className="mode-switch left" style={{ marginTop: 12 }}>
+    <button
+      className={simpleEffectsEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setSimpleEffectsEnabled(true)}
+      type="button"
+    >
+      Ajouter les effets simples
+    </button>
+    <button
+      className={!simpleEffectsEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setSimpleEffectsEnabled(false)}
+      type="button"
+    >
+      Ne pas ajouter
+    </button>
+  </div>
+
+  {!interactionTwoCategoricalIsSignificant ? (
+    <p className="field-helper" style={{ marginTop: 10 }}>
+      Ajoute les effets simples seulement si l’interaction est significative.
+    </p>
+  ) : null}
+
+  {simpleEffectsEnabled && interactionTwoCategoricalIsSignificant && (
+    <>
+      <div className="mode-switch left" style={{ marginTop: 14 }}>
+        <button
+          className={simpleEffectsFamily === "AwithinB" ? "mode-button active" : "mode-button"}
+          onClick={() => setSimpleEffectsFamily("AwithinB")}
+          type="button"
+        >
+          Effet de {twoCategorical.factorA} dans chaque niveau de {twoCategorical.factorB}
+        </button>
+        <button
+          className={simpleEffectsFamily === "BwithinA" ? "mode-button active" : "mode-button"}
+          onClick={() => setSimpleEffectsFamily("BwithinA")}
+          type="button"
+        >
+          Effet de {twoCategorical.factorB} dans chaque niveau de {twoCategorical.factorA}
+        </button>
+      </div>
+
+      <div className="mini-note" style={{ marginTop: 12 }}>
+        {simpleEffectsFamily === "AwithinB"
+          ? `Tu compares ${twoCategorical.levelA1} vs ${twoCategorical.levelA2} pour ${twoCategorical.levelB1}, puis pour ${twoCategorical.levelB2}.`
+          : `Tu compares ${twoCategorical.levelB1} vs ${twoCategorical.levelB2} pour ${twoCategorical.levelA1}, puis pour ${twoCategorical.levelA2}.`}
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>
+          Effet simple 1 — {simpleEffectsFamily === "AwithinB"
+            ? `${twoCategorical.factorA} dans ${twoCategorical.levelB1}`
+            : `${twoCategorical.factorB} dans ${twoCategorical.levelA1}`}
+        </strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label={`M ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA1 : twoCategorical.levelB1}`}
+            value={simpleEffects.s1m1}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1m1: value })}
+          />
+          <TextField
+            label={`ET ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA1 : twoCategorical.levelB1}`}
+            value={simpleEffects.s1sd1}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1sd1: value })}
+          />
+          <TextField
+            label={`M ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA2 : twoCategorical.levelB2}`}
+            value={simpleEffects.s1m2}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1m2: value })}
+          />
+          <TextField
+            label={`ET ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA2 : twoCategorical.levelB2}`}
+            value={simpleEffects.s1sd2}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1sd2: value })}
+          />
+          <TextField
+            label="t"
+            value={simpleEffects.s1t}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1t: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={simpleEffects.s1df}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1df: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={simpleEffects.s1p}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s1p: value })}
+            placeholder="ex. .051 ou 1"
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title="PRE de l’effet simple 1"
+            value={simpleEffects.s1pre}
+            onChange={(next) => setSimpleEffects({ ...simpleEffects, s1pre: next })}
+          />
+        </div>
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>
+          Effet simple 2 — {simpleEffectsFamily === "AwithinB"
+            ? `${twoCategorical.factorA} dans ${twoCategorical.levelB2}`
+            : `${twoCategorical.factorB} dans ${twoCategorical.levelA2}`}
+        </strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label={`M ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA1 : twoCategorical.levelB1}`}
+            value={simpleEffects.s2m1}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2m1: value })}
+          />
+          <TextField
+            label={`ET ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA1 : twoCategorical.levelB1}`}
+            value={simpleEffects.s2sd1}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2sd1: value })}
+          />
+          <TextField
+            label={`M ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA2 : twoCategorical.levelB2}`}
+            value={simpleEffects.s2m2}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2m2: value })}
+          />
+          <TextField
+            label={`ET ${simpleEffectsFamily === "AwithinB" ? twoCategorical.levelA2 : twoCategorical.levelB2}`}
+            value={simpleEffects.s2sd2}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2sd2: value })}
+          />
+          <TextField
+            label="t"
+            value={simpleEffects.s2t}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2t: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={simpleEffects.s2df}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2df: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={simpleEffects.s2p}
+            onChange={(value) => setSimpleEffects({ ...simpleEffects, s2p: value })}
+            placeholder="ex. .959 ou < .001"
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title="PRE de l’effet simple 2"
+            value={simpleEffects.s2pre}
+            onChange={(next) => setSimpleEffects({ ...simpleEffects, s2pre: next })}
+          />
+        </div>
+      </div>
+    </>
+  )}
+</div>
                       </div>
                     </>
                   )}
