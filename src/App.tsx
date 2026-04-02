@@ -453,6 +453,38 @@ const [simpleEffects, setSimpleEffects] = useState({
   s2pre: makePreControl(),
 });
 
+const [mixedSimpleSlopesEnabled, setMixedSimpleSlopesEnabled] = useState(false);
+
+const [mixedSimpleSlopes, setMixedSimpleSlopes] = useState({
+  b1: "",
+  t1: "",
+  df1: "",
+  p1: "",
+  pre1: makePreControl(),
+  b2: "",
+  t2: "",
+  df2: "",
+  p2: "",
+  pre2: makePreControl(),
+});
+
+const [twoContinuousSimpleSlopesEnabled, setTwoContinuousSimpleSlopesEnabled] = useState(false);
+
+const [twoContinuousSimpleSlopes, setTwoContinuousSimpleSlopes] = useState({
+  level1Label: "niveau bas du modérateur",
+  level2Label: "niveau haut du modérateur",
+  b1: "",
+  t1: "",
+  df1: "",
+  p1: "",
+  pre1: makePreControl(),
+  b2: "",
+  t2: "",
+  df2: "",
+  p2: "",
+  pre2: makePreControl(),
+});
+
   const preOutput = useMemo(() => {
     if (preMode === "f") {
       const value = computePreFromFValues(preFromF.f, preFromF.n, preFromF.pa, preFromF.pc);
@@ -1326,6 +1358,128 @@ const simpleEffectsApa = useMemo(() => {
   return `${sentence1} ${sentence2}`;
 }, [simpleEffects, simpleEffectsFamily, twoCategorical]);
 
+const interactionMixedIsSignificant = useMemo(() => {
+  const sig = isSignificantP(interactionMixed.intP);
+  return sig === true;
+}, [interactionMixed.intP]);
+
+const interactionMixedSimpleSlopesApa = useMemo(() => {
+  const numericReady = [
+    mixedSimpleSlopes.b1,
+    mixedSimpleSlopes.t1,
+    mixedSimpleSlopes.df1,
+    mixedSimpleSlopes.b2,
+    mixedSimpleSlopes.t2,
+    mixedSimpleSlopes.df2,
+  ].every(hasNumber);
+
+  if (!numericReady || !mixedSimpleSlopes.p1.trim() || !mixedSimpleSlopes.p2.trim()) return "";
+
+  const b1 = parseValue(mixedSimpleSlopes.b1);
+  const t1 = parseValue(mixedSimpleSlopes.t1);
+  const df1 = parseValue(mixedSimpleSlopes.df1);
+
+  const b2 = parseValue(mixedSimpleSlopes.b2);
+  const t2 = parseValue(mixedSimpleSlopes.t2);
+  const df2 = parseValue(mixedSimpleSlopes.df2);
+
+  const sig1 = isSignificantP(mixedSimpleSlopes.p1);
+  const sig2 = isSignificantP(mixedSimpleSlopes.p2);
+  if (sig1 === null || sig2 === null) return "";
+
+  const pText1 = normalizePText(mixedSimpleSlopes.p1);
+  const pText2 = normalizePText(mixedSimpleSlopes.p2);
+
+  const preText1 = preSuffix(mixedSimpleSlopes.pre1);
+  const preText2 = preSuffix(mixedSimpleSlopes.pre2);
+
+  const dir1 = b1 > 0 ? "positive" : b1 < 0 ? "négative" : "nulle";
+  const dir2 = b2 > 0 ? "positive" : b2 < 0 ? "négative" : "nulle";
+
+  const sentence1 = sig1
+    ? `La pente simple de ${interactionMixed.continuousPredictor} est significative pour ${interactionMixed.group1}, b = ${formatValue(
+        b1,
+        3
+      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 2)}, ${pText1}${preText1}. La relation est ${dir1}.`
+    : `La pente simple de ${interactionMixed.continuousPredictor} n’est pas significative pour ${interactionMixed.group1}, b = ${formatValue(
+        b1,
+        3
+      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 2)}, ${pText1}${preText1}. La relation est descriptivement ${dir1}.`;
+
+  const sentence2 = sig2
+    ? `La pente simple de ${interactionMixed.continuousPredictor} est significative pour ${interactionMixed.group2}, b = ${formatValue(
+        b2,
+        3
+      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 2)}, ${pText2}${preText2}. La relation est ${dir2}.`
+    : `La pente simple de ${interactionMixed.continuousPredictor} n’est pas significative pour ${interactionMixed.group2}, b = ${formatValue(
+        b2,
+        3
+      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 2)}, ${pText2}${preText2}. La relation est descriptivement ${dir2}.`;
+
+  return `${sentence1} ${sentence2}`;
+}, [mixedSimpleSlopes, interactionMixed]);
+
+const interactionTwoContinuousIsSignificant = useMemo(() => {
+  const sig = isSignificantP(interactionTwoContinuous.pInt);
+  return sig === true;
+}, [interactionTwoContinuous.pInt]);
+
+const interactionTwoContinuousSimpleSlopesApa = useMemo(() => {
+  const numericReady = [
+    twoContinuousSimpleSlopes.b1,
+    twoContinuousSimpleSlopes.t1,
+    twoContinuousSimpleSlopes.df1,
+    twoContinuousSimpleSlopes.b2,
+    twoContinuousSimpleSlopes.t2,
+    twoContinuousSimpleSlopes.df2,
+  ].every(hasNumber);
+
+  if (!numericReady || !twoContinuousSimpleSlopes.p1.trim() || !twoContinuousSimpleSlopes.p2.trim()) return "";
+
+  const b1 = parseValue(twoContinuousSimpleSlopes.b1);
+  const t1 = parseValue(twoContinuousSimpleSlopes.t1);
+  const df1 = parseValue(twoContinuousSimpleSlopes.df1);
+
+  const b2 = parseValue(twoContinuousSimpleSlopes.b2);
+  const t2 = parseValue(twoContinuousSimpleSlopes.t2);
+  const df2 = parseValue(twoContinuousSimpleSlopes.df2);
+
+  const sig1 = isSignificantP(twoContinuousSimpleSlopes.p1);
+  const sig2 = isSignificantP(twoContinuousSimpleSlopes.p2);
+  if (sig1 === null || sig2 === null) return "";
+
+  const pText1 = normalizePText(twoContinuousSimpleSlopes.p1);
+  const pText2 = normalizePText(twoContinuousSimpleSlopes.p2);
+
+  const preText1 = preSuffix(twoContinuousSimpleSlopes.pre1);
+  const preText2 = preSuffix(twoContinuousSimpleSlopes.pre2);
+
+  const dir1 = b1 > 0 ? "positive" : b1 < 0 ? "négative" : "nulle";
+  const dir2 = b2 > 0 ? "positive" : b2 < 0 ? "négative" : "nulle";
+
+  const sentence1 = sig1
+    ? `La pente simple de ${interactionTwoContinuous.predictor1} est significative lorsque ${interactionTwoContinuous.predictor2} = ${twoContinuousSimpleSlopes.level1Label}, b = ${formatValue(
+        b1,
+        3
+      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 2)}, ${pText1}${preText1}. La relation est ${dir1}.`
+    : `La pente simple de ${interactionTwoContinuous.predictor1} n’est pas significative lorsque ${interactionTwoContinuous.predictor2} = ${twoContinuousSimpleSlopes.level1Label}, b = ${formatValue(
+        b1,
+        3
+      )}, t(${formatValue(df1, 0)}) = ${formatValue(t1, 2)}, ${pText1}${preText1}. La relation est descriptivement ${dir1}.`;
+
+  const sentence2 = sig2
+    ? `La pente simple de ${interactionTwoContinuous.predictor1} est significative lorsque ${interactionTwoContinuous.predictor2} = ${twoContinuousSimpleSlopes.level2Label}, b = ${formatValue(
+        b2,
+        3
+      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 2)}, ${pText2}${preText2}. La relation est ${dir2}.`
+    : `La pente simple de ${interactionTwoContinuous.predictor1} n’est pas significative lorsque ${interactionTwoContinuous.predictor2} = ${twoContinuousSimpleSlopes.level2Label}, b = ${formatValue(
+        b2,
+        3
+      )}, t(${formatValue(df2, 0)}) = ${formatValue(t2, 2)}, ${pText2}${preText2}. La relation est descriptivement ${dir2}.`;
+
+  return `${sentence1} ${sentence2}`;
+}, [twoContinuousSimpleSlopes, interactionTwoContinuous]);
+
   const explainItems = [
     {
       id: "b",
@@ -1365,24 +1519,28 @@ const simpleEffectsApa = useMemo(() => {
     },
   ];
 
-  const currentApaText =
-    apaMode === "twoGroups"
-      ? twoGroupsApa
-      : apaMode === "simpleRegression"
-      ? simpleRegressionApa
-      : apaMode === "noInteraction"
-      ? noInteractionSubtype === "mixed"
-        ? mainMixedApa
-        : noInteractionSubtype === "twoContinuous"
-        ? mainTwoContinuousApa
-        : mainTwoCategoricalApa
-      : interactionSubtype === "mixed"
-? interactionMixedApa
-: interactionSubtype === "twoContinuous"
-? interactionTwoContinuousApa
-: simpleEffectsEnabled && interactionTwoCategoricalIsSignificant && simpleEffectsApa
-? `${interactionTwoCategoricalApa} ${simpleEffectsApa}`
-: interactionTwoCategoricalApa;
+const currentApaText =
+  apaMode === "twoGroups"
+    ? twoGroupsApa
+    : apaMode === "simpleRegression"
+    ? simpleRegressionApa
+    : apaMode === "noInteraction"
+    ? noInteractionSubtype === "mixed"
+      ? mainMixedApa
+      : noInteractionSubtype === "twoContinuous"
+      ? mainTwoContinuousApa
+      : mainTwoCategoricalApa
+    : interactionSubtype === "mixed"
+    ? mixedSimpleSlopesEnabled && interactionMixedIsSignificant && interactionMixedSimpleSlopesApa
+      ? `${interactionMixedApa} ${interactionMixedSimpleSlopesApa}`
+      : interactionMixedApa
+    : interactionSubtype === "twoContinuous"
+    ? twoContinuousSimpleSlopesEnabled && interactionTwoContinuousIsSignificant && interactionTwoContinuousSimpleSlopesApa
+      ? `${interactionTwoContinuousApa} ${interactionTwoContinuousSimpleSlopesApa}`
+      : interactionTwoContinuousApa
+    : simpleEffectsEnabled && interactionTwoCategoricalIsSignificant && simpleEffectsApa
+    ? `${interactionTwoCategoricalApa} ${simpleEffectsApa}`
+    : interactionTwoCategoricalApa;
 
   const currentApaSecondary =
     apaMode === "simpleRegression"
@@ -1933,6 +2091,110 @@ const simpleEffectsApa = useMemo(() => {
                             onChange={(next) => setInteractionMixed({ ...interactionMixed, intPre: next })}
                           />
                         </div>
+                        <div className="note-box">
+  <strong>Pentes simples (effets simples) (optionnel)</strong>
+
+  <div className="mode-switch left" style={{ marginTop: 12 }}>
+    <button
+      className={mixedSimpleSlopesEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setMixedSimpleSlopesEnabled(true)}
+      type="button"
+    >
+      Ajouter les pentes simples
+    </button>
+    <button
+      className={!mixedSimpleSlopesEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setMixedSimpleSlopesEnabled(false)}
+      type="button"
+    >
+      Ne pas ajouter
+    </button>
+  </div>
+
+  {!interactionMixedIsSignificant ? (
+    <p className="field-helper" style={{ marginTop: 10 }}>
+      Ajoute les pentes simples seulement si l’interaction est significative.
+    </p>
+  ) : null}
+
+  {mixedSimpleSlopesEnabled && interactionMixedIsSignificant && (
+    <>
+      <div className="mini-note" style={{ marginTop: 12 }}>
+        Tu testes la pente de {interactionMixed.continuousPredictor} séparément pour {interactionMixed.group1} puis pour {interactionMixed.group2}.
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>Pente simple — {interactionMixed.group1}</strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label="b"
+            value={mixedSimpleSlopes.b1}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, b1: value })}
+          />
+          <TextField
+            label="t"
+            value={mixedSimpleSlopes.t1}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, t1: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={mixedSimpleSlopes.df1}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, df1: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={mixedSimpleSlopes.p1}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, p1: value })}
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title={`PRE de la pente simple pour ${interactionMixed.group1}`}
+            value={mixedSimpleSlopes.pre1}
+            onChange={(next) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, pre1: next })}
+          />
+        </div>
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>Pente simple — {interactionMixed.group2}</strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label="b"
+            value={mixedSimpleSlopes.b2}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, b2: value })}
+          />
+          <TextField
+            label="t"
+            value={mixedSimpleSlopes.t2}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, t2: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={mixedSimpleSlopes.df2}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, df2: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={mixedSimpleSlopes.p2}
+            onChange={(value) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, p2: value })}
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title={`PRE de la pente simple pour ${interactionMixed.group2}`}
+            value={mixedSimpleSlopes.pre2}
+            onChange={(next) => setMixedSimpleSlopes({ ...mixedSimpleSlopes, pre2: next })}
+          />
+        </div>
+      </div>
+    </>
+  )}
+</div>
                       </div>
                     </>
                   )}
@@ -1994,6 +2256,121 @@ const simpleEffectsApa = useMemo(() => {
                             onChange={(next) => setInteractionTwoContinuous({ ...interactionTwoContinuous, preInt: next })}
                           />
                         </div>
+
+                        <div className="note-box">
+  <strong>Pentes simples (Effets simples) (optionnel)</strong>
+
+  <div className="mode-switch left" style={{ marginTop: 12 }}>
+    <button
+      className={twoContinuousSimpleSlopesEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setTwoContinuousSimpleSlopesEnabled(true)}
+      type="button"
+    >
+      Ajouter les pentes simples
+    </button>
+    <button
+      className={!twoContinuousSimpleSlopesEnabled ? "mode-button active" : "mode-button"}
+      onClick={() => setTwoContinuousSimpleSlopesEnabled(false)}
+      type="button"
+    >
+      Ne pas ajouter
+    </button>
+  </div>
+
+  {!interactionTwoContinuousIsSignificant ? (
+    <p className="field-helper" style={{ marginTop: 10 }}>
+      Ajoute les pentes simples seulement si l’interaction est significative.
+    </p>
+  ) : null}
+
+  {twoContinuousSimpleSlopesEnabled && interactionTwoContinuousIsSignificant && (
+    <>
+      <div className="mini-note" style={{ marginTop: 12 }}>
+        Tu testes la pente de {interactionTwoContinuous.predictor1} à deux niveaux de {interactionTwoContinuous.predictor2}. Si tu veux l’inverse, échange les noms des prédicteurs.
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>Pente simple 1</strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label={`Niveau de ${interactionTwoContinuous.predictor2}`}
+            value={twoContinuousSimpleSlopes.level1Label}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, level1Label: value })}
+          />
+          <TextField
+            label="b"
+            value={twoContinuousSimpleSlopes.b1}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, b1: value })}
+          />
+          <TextField
+            label="t"
+            value={twoContinuousSimpleSlopes.t1}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, t1: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={twoContinuousSimpleSlopes.df1}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, df1: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={twoContinuousSimpleSlopes.p1}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, p1: value })}
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title="PRE de la pente simple 1"
+            value={twoContinuousSimpleSlopes.pre1}
+            onChange={(next) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, pre1: next })}
+          />
+        </div>
+      </div>
+
+      <div className="note-box" style={{ marginTop: 14 }}>
+        <strong>Pente simple 2</strong>
+
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <TextField
+            label={`Niveau de ${interactionTwoContinuous.predictor2}`}
+            value={twoContinuousSimpleSlopes.level2Label}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, level2Label: value })}
+          />
+          <TextField
+            label="b"
+            value={twoContinuousSimpleSlopes.b2}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, b2: value })}
+          />
+          <TextField
+            label="t"
+            value={twoContinuousSimpleSlopes.t2}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, t2: value })}
+          />
+          <TextField
+            label="ddl erreur"
+            value={twoContinuousSimpleSlopes.df2}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, df2: value })}
+          />
+          <TextField
+            label="p (texte)"
+            value={twoContinuousSimpleSlopes.p2}
+            onChange={(value) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, p2: value })}
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <PreInput
+            title="PRE de la pente simple 2"
+            value={twoContinuousSimpleSlopes.pre2}
+            onChange={(next) => setTwoContinuousSimpleSlopes({ ...twoContinuousSimpleSlopes, pre2: next })}
+          />
+        </div>
+      </div>
+    </>
+  )}
+</div>
                       </div>
                     </>
                   )}
