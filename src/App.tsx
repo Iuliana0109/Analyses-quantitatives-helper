@@ -919,20 +919,26 @@ function App() {
     const lowerSd = m1 > m2 ? sd2 : sd1;
 
     const catSentence = catSig
-      ? `L’effet principal de ${interactionMixed.categoricalPredictor} est significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
-          catDf2,
-          0
-        )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}. Indépendamment de ${interactionMixed.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
-          higherMean,
-          3
-        )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${interactionMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
-          lowerMean,
-          3
-        )}, ET = ${formatValue(lowerSd, 3)}).`
-      : `L’effet principal de ${interactionMixed.categoricalPredictor} n’est pas significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
-          catDf2,
-          0
-        )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}.`;
+  ? `L’effet principal de ${interactionMixed.categoricalPredictor} est significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
+      catDf2,
+      0
+    )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}. Indépendamment de ${interactionMixed.continuousPredictor}, les ${higherGroup} (M = ${formatValue(
+      higherMean,
+      3
+    )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${interactionMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
+      lowerMean,
+      3
+    )}, ET = ${formatValue(lowerSd, 3)}).`
+  : `L’effet principal de ${interactionMixed.categoricalPredictor} n’est pas significatif, F(${formatValue(catDf1, 0)}, ${formatValue(
+      catDf2,
+      0
+    )}) = ${formatValue(catF, 3)}, ${catPText}${catPreText}. Au niveau descriptif, les ${higherGroup} (M = ${formatValue(
+      higherMean,
+      3
+    )}, ET = ${formatValue(higherSd, 3)}) présentent un score plus élevé sur ${interactionMixed.outcome} que les ${lowerGroup} (M = ${formatValue(
+      lowerMean,
+      3
+    )}, ET = ${formatValue(lowerSd, 3)}).`;
 
     const direction = b > 0 ? "positivement" : b < 0 ? "négativement" : "";
     const contSentence = contSig
@@ -1116,36 +1122,48 @@ function App() {
     const lowerSdB = meanB1 > meanB2 ? sdB2 : sdB1;
 
     const sentenceA = sigA
-      ? `L’effet principal de ${twoCategorical.factorA} est significatif, F(${formatValue(df1A, 0)}, ${formatValue(
-          df2A,
-          0
-        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Indépendamment de ${twoCategorical.factorB}, les ${higherA} (M = ${formatValue(
-          higherMeanA,
-          3
-        )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerA} (M = ${formatValue(
-          lowerMeanA,
-          3
-        )}, ET = ${formatValue(lowerSdA, 3)}).`
-      : `L’effet principal de ${twoCategorical.factorA} n’est pas significatif, F(${formatValue(df1A, 0)}, ${formatValue(
-          df2A,
-          0
-        )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}.`;
+  ? `L’effet principal de ${twoCategorical.factorA} est significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+      df2A,
+      0
+    )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Indépendamment de ${twoCategorical.factorB}, les ${higherA} (M = ${formatValue(
+      higherMeanA,
+      3
+    )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerA} (M = ${formatValue(
+      lowerMeanA,
+      3
+    )}, ET = ${formatValue(lowerSdA, 3)}).`
+  : `L’effet principal de ${twoCategorical.factorA} n’est pas significatif, F(${formatValue(df1A, 0)}, ${formatValue(
+      df2A,
+      0
+    )}) = ${formatValue(fA, 3)}, ${pAText}${preAText}. Au niveau descriptif, les ${higherA} (M = ${formatValue(
+      higherMeanA,
+      3
+    )}, ET = ${formatValue(higherSdA, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerA} (M = ${formatValue(
+      lowerMeanA,
+      3
+    )}, ET = ${formatValue(lowerSdA, 3)}).`;
 
     const sentenceB = sigB
-      ? `L’effet principal de ${twoCategorical.factorB} est significatif, F(${formatValue(df1B, 0)}, ${formatValue(
-          df2B,
-          0
-        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Indépendamment de ${twoCategorical.factorA}, les ${higherB} (M = ${formatValue(
-          higherMeanB,
-          3
-        )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerB} (M = ${formatValue(
-          lowerMeanB,
-          3
-        )}, ET = ${formatValue(lowerSdB, 3)}).`
-      : `L’effet principal de ${twoCategorical.factorB} n’est pas significatif, F(${formatValue(df1B, 0)}, ${formatValue(
-          df2B,
-          0
-        )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}.`;
+  ? `L’effet principal de ${twoCategorical.factorB} est significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+      df2B,
+      0
+    )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Indépendamment de ${twoCategorical.factorA}, les ${higherB} (M = ${formatValue(
+      higherMeanB,
+      3
+    )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerB} (M = ${formatValue(
+      lowerMeanB,
+      3
+    )}, ET = ${formatValue(lowerSdB, 3)}).`
+  : `L’effet principal de ${twoCategorical.factorB} n’est pas significatif, F(${formatValue(df1B, 0)}, ${formatValue(
+      df2B,
+      0
+    )}) = ${formatValue(fB, 3)}, ${pBText}${preBText}. Au niveau descriptif, les ${higherB} (M = ${formatValue(
+      higherMeanB,
+      3
+    )}, ET = ${formatValue(higherSdB, 3)}) présentent un score plus élevé sur ${twoCategorical.outcome} que les ${lowerB} (M = ${formatValue(
+      lowerMeanB,
+      3
+    )}, ET = ${formatValue(lowerSdB, 3)}).`;
 
     const intSentence = sigInt
       ? `L’interaction entre ${twoCategorical.factorA} et ${twoCategorical.factorB} est significative, F(${formatValue(
